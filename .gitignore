@@ -1,0 +1,18 @@
+.DS_Store
+**/.DS_Store
+
+# Local dependencies and build outputs
+**/node_modules/
+CKZS/unpackage/
+CKZS_API/dist/
+CKZS_API/*.zip
+
+# Local IDE / agent settings
+CKZS/.hbuilderx/
+CKZS/.claude/
+
+# Secrets and machine-specific configuration
+CKZS_API/.env
+CKZS_API/docker-compose.yml
+签名文件/
+
