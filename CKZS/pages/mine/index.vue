@@ -3,6 +3,9 @@
     <!-- 头部 -->
     <view class="header">
       <view class="header-spacer"></view>
+      <view class="back-btn" @click="goBack">
+        <text class="iconfont icon-arrow-left"></text>
+      </view>
       <view class="avatar">
         <text class="avatar-text">{{ initial }}</text>
       </view>
@@ -73,9 +76,11 @@ const initial = computed(() => (username.value || '?')[0].toUpperCase());
 
 onMounted(() => {
   try {
-    const info = JSON.parse(uni.getStorageSync('USER_INFO') || '{}');
+    const cached = uni.getStorageSync(USER_KEY) || uni.getStorageSync('USER_KEY') || '{}';
+    const info = JSON.parse(cached);
     username.value = info.username || '';
     isAdmin.value = info.role === 'admin';
+    if (info.username) uni.setStorageSync(USER_KEY, JSON.stringify(info));
   } catch (e) { }
   fetchProfile();
 });
@@ -85,6 +90,7 @@ const fetchProfile = async () => {
     const user = await http.get('/api/users/profile');
     username.value = user.username || '';
     isAdmin.value = user.role === 'admin';
+    uni.setStorageSync(USER_KEY, JSON.stringify(user));
   } catch (e) { }
 };
 
@@ -106,6 +112,8 @@ const handleResetPwd = async () => {
 const goChangePwd = () => {
   uni.navigateTo({ url: '/pages/mine/changePassword' });
 };
+
+const goBack = () => uni.navigateBack();
 
 const handleLogout = () => {
   uni.showModal({
@@ -138,10 +146,27 @@ const handleLogout = () => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
 }
 
 .header-spacer {
   height: calc(var(--status-bar-height) + 80rpx);
+}
+
+.back-btn {
+  position: absolute;
+  top: calc(var(--status-bar-height) + 20rpx);
+  left: 30rpx;
+  width: 70rpx;
+  height: 70rpx;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  font-size: 32rpx;
+  z-index: 2;
 }
 
 .avatar {

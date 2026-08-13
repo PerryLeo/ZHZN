@@ -54,11 +54,11 @@ const checkAndGo = () => {
     header: { 'Authorization': `Bearer ${token}` },
     success: (res) => {
       if (res.data.code === 0) {
-        uni.setStorageSync('USER_KEY', JSON.stringify(res.data.data));
+        uni.setStorageSync(USER_KEY, JSON.stringify(res.data.data));
         go('/pages/home/index');
       } else {
         uni.removeStorageSync(TOKEN_KEY);
-        uni.removeStorageSync('USER_KEY');
+        uni.removeStorageSync(USER_KEY);
         tryAutoLogin();
       }
     },
@@ -85,7 +85,7 @@ const tryAutoLogin = () => {
     success: (res) => {
       if (res.data.code === 0 && res.data.data) {
         uni.setStorageSync(TOKEN_KEY, res.data.data.token);
-        uni.setStorageSync('USER_KEY', JSON.stringify(res.data.data.user));
+        uni.setStorageSync(USER_KEY, JSON.stringify(res.data.data.user));
         go('/pages/home/index');
       } else {
         go('/pages/login/login');
@@ -283,7 +283,6 @@ onMounted(() => {
 /* ===== 加载指示器 ===== */
 .loader {
   display: flex;
-  gap: 16rpx;
 }
 
 .loader-dot {
@@ -292,6 +291,10 @@ onMounted(() => {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.5);
   animation: dotBounce 1.4s ease-in-out infinite;
+
+  & + .loader-dot {
+    margin-left: 16rpx;
+  }
 
   &:nth-child(2) {
     animation-delay: 0.2s;

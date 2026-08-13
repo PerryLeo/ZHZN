@@ -1,14 +1,6 @@
 import bcrypt from 'bcryptjs';
 import sequelize from '../config/database.js';
-import { initUserModel } from '../models/user.model.js';
-import { initDeviceModel } from '../models/device.model.js';
-
-const User = initUserModel(sequelize);
-const Device = initDeviceModel(sequelize);
-
-// 关联
-User.hasMany(Device, { foreignKey: 'userId', as: 'devices' });
-Device.belongsTo(User, { foreignKey: 'userId', as: 'owner' });
+import { User, Device } from '../models/index.js';
 
 const users = [
   { username: 'admin',  password: 'admin123', role: 'admin' },

@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import userRoutes from './user.routes.js';
 import deviceRoutes from './device.routes.js';
+import adminRoutes from './admin.routes.js';
+import deviceGroupRoutes from './deviceGroup.routes.js';
 
 const router = Router();
 
 // 挂载各模块路由
 router.use('/users', userRoutes);
 router.use('/devices', deviceRoutes);
+router.use('/admin', adminRoutes);
+router.use('/device-groups', deviceGroupRoutes);
 
 // 后续可扩展更多模块，例如:
 // router.use('/orders', orderRoutes);

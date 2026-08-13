@@ -23,7 +23,7 @@
                         <text class="label">时间段{{ index + 1 }}</text>
                         <view class="right-box">
                             <view class="edit-zone">
-                                <view @click="openCustomPicker(index)">
+                                <view class="current-time" @click="openCustomPicker(index)">
                                     <text class="value highlight">{{ isEmptySlot(item) ? '--:--' : item.time }}</text>
                                 </view>
                                 <view class="input-wrap">
@@ -34,10 +34,12 @@
                                 </view>
                             </view>
                             <view class="def-zone" v-if="defaultTimeSlots.length > 0">
-                                <text class="def-val">{{ isEmptySlot(defaultTimeSlots[index]) ? '--:--' :
-                                    defaultTimeSlots[index].time }}</text>
-                                <text class="def-val">{{ isEmptySlot(defaultTimeSlots[index]) ? '-趟' :
-                                    defaultTimeSlots[index].trips + '趟' }}</text>
+                                <view class="def-line">
+                                    <text class="def-val">{{ isEmptySlot(defaultTimeSlots[index]) ? '--:--' :
+                                        defaultTimeSlots[index].time }}</text>
+                                    <text class="def-val def-trips">{{ isEmptySlot(defaultTimeSlots[index]) ? '-趟' :
+                                        defaultTimeSlots[index].trips + '趟' }}</text>
+                                </view>
                             </view>
                         </view>
                     </view>
@@ -422,7 +424,6 @@ const syncTime = () => {
     .header-right {
         display: flex;
         align-items: center;
-        gap: 10rpx;
     }
 
     .header-btn {
@@ -433,6 +434,10 @@ const syncTime = () => {
         background: rgba(255, 255, 255, 0.25);
         border-radius: 36rpx;
         white-space: nowrap;
+
+        & + .header-btn {
+            margin-left: 10rpx;
+        }
 
         &.disabled {
             opacity: 0.6;
@@ -496,26 +501,43 @@ const syncTime = () => {
         .edit-zone {
             display: flex;
             align-items: center;
-            gap: 15rpx;
+            height: 40rpx;
+            flex-shrink: 0;
             margin-right: 24rpx;
 
-            .value {
-                &.highlight {
-                    color: $primary-color;
-                    font-weight: bold;
-                    font-size: 30rpx;
+            .current-time {
+                height: 40rpx;
+                display: flex;
+                align-items: center;
+                flex-shrink: 0;
+
+                .value {
+                    line-height: 40rpx;
+                    white-space: nowrap;
+
+                    &.highlight {
+                        color: $primary-color;
+                        font-weight: bold;
+                        font-size: 30rpx;
+                    }
                 }
             }
 
             .input-wrap {
+                height: 40rpx;
+                box-sizing: border-box;
                 display: flex;
                 align-items: center;
+                flex-shrink: 0;
+                margin-left: 15rpx;
                 background: #F2F5FA;
-                padding: 4rpx 12rpx;
+                padding: 0 12rpx;
                 border-radius: 8rpx;
 
                 .trips-input {
                     width: 44rpx;
+                    height: 40rpx;
+                    line-height: 40rpx;
                     text-align: center;
                     font-size: 26rpx;
                     color: #333;
@@ -524,6 +546,7 @@ const syncTime = () => {
 
                 .trips-placeholder {
                     width: 44rpx;
+                    line-height: 40rpx;
                     text-align: center;
                     font-size: 30rpx;
                     color: #999;
@@ -531,6 +554,7 @@ const syncTime = () => {
                 }
 
                 .unit-text {
+                    line-height: 40rpx;
                     font-size: 20rpx;
                     color: #999;
                 }
@@ -540,14 +564,28 @@ const syncTime = () => {
         .def-zone {
             display: flex;
             align-items: center;
-            gap: 12rpx;
+            flex-shrink: 0;
             padding-left: 24rpx;
             border-left: 2rpx solid #EAEAEA;
 
-            .def-val {
-                font-size: 26rpx;
-                color: #909399;
-                font-weight: 500;
+            .def-line {
+                height: 40rpx;
+                display: flex;
+                align-items: center;
+                flex-wrap: nowrap;
+
+                .def-val {
+                    display: block;
+                    font-size: 26rpx;
+                    line-height: 40rpx;
+                    color: #909399;
+                    font-weight: 500;
+                    white-space: nowrap;
+
+                    &.def-trips {
+                        margin-left: 12rpx;
+                    }
+                }
             }
         }
     }
@@ -560,7 +598,6 @@ const syncTime = () => {
 .footer-bar {
     flex-shrink: 0;
     display: flex;
-    gap: 24rpx;
     padding: 20rpx 30rpx;
     padding-bottom: calc(env(safe-area-inset-bottom) + 20rpx);
     background: #F6F7FB;
@@ -575,6 +612,10 @@ const syncTime = () => {
         border-radius: 48rpx;
         font-size: 28rpx;
         font-weight: 600;
+
+        & + .footer-btn {
+            margin-left: 24rpx;
+        }
 
         &.save {
             background: #fff;
@@ -598,7 +639,13 @@ const syncTime = () => {
 
 .custom-modal-mask {
     position: fixed;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
     background: rgba(0, 0, 0, 0.4);
     z-index: 999;
     display: flex;
@@ -647,12 +694,13 @@ const syncTime = () => {
             .help-label {
                 display: flex;
                 align-items: center;
-                gap: 12rpx;
                 margin-bottom: 12rpx;
 
                 .dot {
                     width: 12rpx;
                     height: 12rpx;
+                    flex-shrink: 0;
+                    margin-right: 12rpx;
                     border-radius: 50%;
 
                     &.import {

@@ -31,18 +31,45 @@
     <view class="main-scroll">
       <view class="scroll-inner">
         <!-- ====== 已绑定设备 ====== -->
-        <view class="section" v-if="boundLoading">
+        <view class="section device-section">
           <view class="section-header">
             <text class="section-title">我的设备</text>
+            <view class="section-actions">
+              <view class="group-select" :class="{ open: groupDropdownVisible }" @click.stop="toggleGroupDropdown">
+                <text class="group-select-text">{{ selectedGroupName }}</text>
+                <view class="group-select-arrow"></view>
+                <view class="group-dropdown" v-if="groupDropdownVisible" @click.stop>
+                  <view
+                    class="group-option"
+                    :class="{ selected: selectedGroupId === 'all' }"
+                    @click="selectDeviceGroup('all')"
+                  >
+                    <text class="group-option-name">全部设备</text>
+                    <text class="group-option-count">{{ allBoundTotal }}</text>
+                  </view>
+                  <view
+                    class="group-option"
+                    :class="{ selected: selectedGroupId === group.id }"
+                    v-for="group in deviceGroups"
+                    :key="group.id"
+                    @click="selectDeviceGroup(group.id)"
+                  >
+                    <text class="group-option-name">{{ group.name }}</text>
+                    <text class="group-option-count">{{ group.deviceCount }}</text>
+                  </view>
+                  <view class="group-option-empty" v-if="!groupLoading && deviceGroups.length === 0">
+                    暂无分组
+                  </view>
+                </view>
+              </view>
+              <view class="section-add-btn" @click.stop="openGroupModal">
+                <view class="section-add-icon"></view>
+              </view>
+            </view>
           </view>
-          <text class="loading-text">加载中...</text>
-        </view>
-        <view class="section" v-else-if="boundDevices.length > 0">
-          <view class="section-header">
-            <text class="section-title">我的设备</text>
-            <text class="section-count">{{ boundDevices.length }} 台已绑定</text>
-          </view>
-          <view class="batch-row">
+          <view class="group-dropdown-mask" v-if="groupDropdownVisible" @click="groupDropdownVisible = false"></view>
+          <text class="loading-text" v-if="boundLoading">加载中...</text>
+          <view class="batch-row" v-if="!boundLoading && filteredBoundDevices.length > 0">
             <view class="batch-btn" @click="turnAllOn">
               <text class="batch-btn-text">全部开启</text>
             </view>
@@ -50,25 +77,65 @@
               <text class="batch-btn-text">全部关闭</text>
             </view>
           </view>
-          <view class="bound-grid">
+          <view class="bound-grid" v-if="!boundLoading && filteredBoundDevices.length > 0">
             <view
               class="bound-card"
-              v-for="item in boundDevices"
+              v-for="item in filteredBoundDevices"
               :key="item.id"
               @click="toBoundDevice(item)"
             >
-              <view class="bound-top">
+              <view class="bound-head">
                 <view class="bound-icon" :class="{ online: item.online === 1 }">
                   <text class="iconfont icon-online bound-device-icon"></text>
+                  <view class="connection-dot" :class="{ online: item.online === 1 }"></view>
                 </view>
-                <view class="bound-status">
-                  <view class="status-dot" :class="{ on: item.online === 1 }"></view>
-                  <text class="status-text">{{ item.online === 1 ? '在线' : '离线' }}</text>
+                <view
+                  class="device-switch"
+                  :class="{
+                    active: item.switchOn === true,
+                    disabled: item.online !== 1 || item.switchLoading
+                  }"
+                  @click.stop="handleDeviceSwitch(item)"
+                >
+                  <view class="switch-thumb"></view>
                 </view>
               </view>
-              <text class="bound-name">{{ item.deviceName || item.deviceCode }}</text>
-              <text class="bound-code">{{ item.deviceCode }}</text>
+              <view class="bound-info">
+                <text class="bound-name">{{ item.deviceName || item.deviceCode }}</text>
+                <text class="bound-code">{{ item.deviceCode }}</text>
+              </view>
+              <view class="bound-metrics">
+                <view class="bound-metric">
+                  <text class="metric-label">电压</text>
+                  <text :class="['metric-value', getMetricValueClass(item.voltage, 'voltage')]">{{ formatMetric(item.voltage, 'V') }}</text>
+                </view>
+                <view class="metric-divider"></view>
+                <view class="bound-metric">
+                  <text class="metric-label">电流</text>
+                  <text :class="['metric-value', getMetricValueClass(item.current, 'current')]">{{ formatMetric(item.current, 'A') }}</text>
+                </view>
+              </view>
+              <view class="mode-row">
+                <text class="mode-label">运行模式</text>
+                <text class="mode-value">{{ item.runMode }}</text>
+              </view>
             </view>
+          </view>
+          <view class="bound-pagination" v-if="!boundLoading && boundTotalPages > 1">
+            <view
+              class="pagination-btn"
+              :class="{ disabled: boundPage <= 1 }"
+              @click.stop="changeBoundPage(boundPage - 1)"
+            >上一页</view>
+            <text class="pagination-info">{{ boundPage }} / {{ boundTotalPages }}</text>
+            <view
+              class="pagination-btn"
+              :class="{ disabled: boundPage >= boundTotalPages }"
+              @click.stop="changeBoundPage(boundPage + 1)"
+            >下一页</view>
+          </view>
+          <view class="bound-empty" v-if="!boundLoading && filteredBoundDevices.length === 0">
+            <text>{{ selectedGroupId === 'all' ? '暂无已绑定设备' : '该分组暂无设备' }}</text>
           </view>
         </view>
 
@@ -88,33 +155,35 @@
               @change="item.show = $event"
               @click="onSwipeClick($event, item)"
             >
-              <view class="device-card" @click="toDeviceDetail(item)">
-                <view class="device-icon-box">
-                  <text class="iconfont icon-lanya device-bt-icon"></text>
-                </view>
-                <view class="device-info">
-                  <view class="info-top">
-                    <text class="d-name">{{ item.name }}</text>
-                    <text class="abnormal-tag" v-if="item.isAbnormal">异常</text>
+              <view class="device-card-container">
+                <view class="device-card" @click="toDeviceDetail(item)">
+                  <view class="device-icon-box">
+                    <text class="iconfont icon-lanya device-bt-icon"></text>
                   </view>
-                  <view class="info-bottom">
-                    <text class="d-id">MAC: {{ item.mac }}</text>
-                  </view>
-                </view>
-                <view class="device-action" v-if="item.canConnect">
-                  <view class="signal-box">
-                    <view class="signal-icon">
-                      <view class="signal-bar" :class="{ 'active': item.signalLevel >= 1 }"
-                        :style="{ backgroundColor: item.signalLevel >= 1 ? item.signalColor : '#E0E0E0' }"></view>
-                      <view class="signal-bar" :class="{ 'active': item.signalLevel >= 2 }"
-                        :style="{ backgroundColor: item.signalLevel >= 2 ? item.signalColor : '#E0E0E0' }"></view>
-                      <view class="signal-bar" :class="{ 'active': item.signalLevel >= 3 }"
-                        :style="{ backgroundColor: item.signalLevel >= 3 ? item.signalColor : '#E0E0E0' }"></view>
-                      <view class="signal-bar" :class="{ 'active': item.signalLevel >= 4 }"
-                        :style="{ backgroundColor: item.signalLevel >= 4 ? item.signalColor : '#E0E0E0' }"></view>
+                  <view class="device-info">
+                    <view class="info-top">
+                      <text class="d-name">{{ item.name }}</text>
+                      <text class="abnormal-tag" v-if="item.isAbnormal">异常</text>
+                    </view>
+                    <view class="info-bottom">
+                      <text class="d-id">MAC: {{ item.mac }}</text>
                     </view>
                   </view>
-                  <text class="d-status">可连接</text>
+                  <view class="device-action" v-if="item.canConnect">
+                    <view class="signal-box">
+                      <view class="signal-icon">
+                        <view class="signal-bar" :class="{ 'active': item.signalLevel >= 1 }"
+                          :style="{ backgroundColor: item.signalLevel >= 1 ? item.signalColor : '#E0E0E0' }"></view>
+                        <view class="signal-bar" :class="{ 'active': item.signalLevel >= 2 }"
+                          :style="{ backgroundColor: item.signalLevel >= 2 ? item.signalColor : '#E0E0E0' }"></view>
+                        <view class="signal-bar" :class="{ 'active': item.signalLevel >= 3 }"
+                          :style="{ backgroundColor: item.signalLevel >= 3 ? item.signalColor : '#E0E0E0' }"></view>
+                        <view class="signal-bar" :class="{ 'active': item.signalLevel >= 4 }"
+                          :style="{ backgroundColor: item.signalLevel >= 4 ? item.signalColor : '#E0E0E0' }"></view>
+                      </view>
+                    </view>
+                    <text class="d-status">可连接</text>
+                  </view>
                 </view>
               </view>
             </uni-swipe-action-item>
@@ -154,6 +223,76 @@
         </view>
       </view>
     </view>
+
+    <!-- 新建设备分组弹窗 -->
+    <view class="group-modal-mask" v-if="groupModalVisible" @click="closeGroupModal">
+      <view class="group-modal" @click.stop>
+        <view class="group-modal-header">
+          <view>
+            <text class="group-modal-title">新建设备分组</text>
+            <text class="group-modal-subtitle">设置名称并选择需要加入的设备</text>
+          </view>
+          <view class="group-modal-close" @click="closeGroupModal">×</view>
+        </view>
+        <view class="group-modal-body">
+          <text class="group-field-label">分组名称</text>
+          <view class="group-name-input-wrap">
+            <input
+              class="group-name-input"
+              v-model="groupName"
+              maxlength="50"
+              placeholder="请输入分组名称"
+              placeholder-style="color: #B5BAC4;"
+            />
+          </view>
+          <view class="group-device-title-row">
+            <text class="group-field-label">选择设备</text>
+            <text class="group-selected-count">已选 {{ selectedGroupDeviceIds.length }} 台</text>
+          </view>
+          <scroll-view scroll-y class="group-device-list">
+            <text class="group-device-loading" v-if="groupCandidateLoading">加载中...</text>
+            <view
+              class="group-device-item"
+              :class="{ selected: isGroupDeviceSelected(device.id) }"
+              v-for="device in groupCandidateDevices"
+              :key="device.id"
+              @click="toggleGroupDevice(device.id)"
+            >
+              <view class="group-device-icon" :class="{ online: device.online === 1 }">
+                <text class="iconfont icon-online"></text>
+              </view>
+              <view class="group-device-info">
+                <text class="group-device-name">{{ device.deviceName || device.deviceCode }}</text>
+                <text class="group-device-code">{{ device.deviceCode }}</text>
+              </view>
+              <view class="group-device-check" :class="{ checked: isGroupDeviceSelected(device.id) }">
+                <view class="group-device-checkmark"></view>
+              </view>
+            </view>
+            <view class="group-device-empty" v-if="!groupCandidateLoading && groupCandidateDevices.length === 0">暂无可选设备</view>
+          </scroll-view>
+          <view class="group-device-pagination" v-if="groupCandidateTotalPages > 1">
+            <view
+              class="group-page-btn"
+              :class="{ disabled: groupCandidatePage <= 1 }"
+              @click="changeGroupCandidatePage(groupCandidatePage - 1)"
+            >上一页</view>
+            <text class="group-page-info">{{ groupCandidatePage }} / {{ groupCandidateTotalPages }}</text>
+            <view
+              class="group-page-btn"
+              :class="{ disabled: groupCandidatePage >= groupCandidateTotalPages }"
+              @click="changeGroupCandidatePage(groupCandidatePage + 1)"
+            >下一页</view>
+          </view>
+        </view>
+        <view class="group-modal-footer">
+          <button class="group-cancel-btn" @click="closeGroupModal">取消</button>
+          <button class="group-create-btn" :disabled="groupSubmitting" @click="createDeviceGroup">
+            {{ groupSubmitting ? '创建中...' : '创建分组' }}
+          </button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -163,19 +302,328 @@ import { onShow, onHide } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
 
 // ============ 已绑定设备 ============
+const DEVICE_PAGE_SIZE = 10;
 const boundDevices = ref([]);
-
 const boundLoading = ref(false);
+const boundPage = ref(1);
+const boundTotal = ref(0);
+const allBoundTotal = ref(0);
+const boundTotalPages = ref(0);
+const deviceGroups = ref([]);
+const groupLoading = ref(false);
+const selectedGroupId = ref('all');
+const groupDropdownVisible = ref(false);
+const groupModalVisible = ref(false);
+const groupName = ref('');
+const selectedGroupDeviceIds = ref([]);
+const groupSubmitting = ref(false);
+const groupCandidateDevices = ref([]);
+const groupCandidateLoading = ref(false);
+const groupCandidatePage = ref(1);
+const groupCandidateTotalPages = ref(0);
+
+const selectedGroupName = computed(() => {
+  if (selectedGroupId.value === 'all') return '全部设备';
+  return deviceGroups.value.find(group => group.id === selectedGroupId.value)?.name || '全部设备';
+});
+
+const filteredBoundDevices = computed(() => {
+  return boundDevices.value;
+});
+
+const toggleGroupDropdown = () => {
+  groupDropdownVisible.value = !groupDropdownVisible.value;
+};
+
+const selectDeviceGroup = async (groupId) => {
+  selectedGroupId.value = groupId;
+  groupDropdownVisible.value = false;
+  boundPage.value = 1;
+  await fetchBoundDevices();
+};
+
+const fetchDeviceGroups = async () => {
+  groupLoading.value = true;
+  try {
+    const list = await http.get('/api/device-groups');
+    deviceGroups.value = Array.isArray(list) ? list : [];
+    if (
+      selectedGroupId.value !== 'all' &&
+      !deviceGroups.value.some(group => group.id === selectedGroupId.value)
+    ) {
+      selectedGroupId.value = 'all';
+    }
+  } catch (error) {
+    deviceGroups.value = [];
+  } finally {
+    groupLoading.value = false;
+  }
+};
+
+const fetchGroupCandidateDevices = async () => {
+  groupCandidateLoading.value = true;
+  try {
+    const result = await http.get('/api/users/devices', {
+      page: groupCandidatePage.value,
+      pageSize: DEVICE_PAGE_SIZE
+    });
+    groupCandidateDevices.value = Array.isArray(result?.list) ? result.list : [];
+    groupCandidateTotalPages.value = Number(result?.totalPages) || 0;
+  } catch (error) {
+    groupCandidateDevices.value = [];
+    groupCandidateTotalPages.value = 0;
+  } finally {
+    groupCandidateLoading.value = false;
+  }
+};
+
+const changeGroupCandidatePage = async (page) => {
+  if (groupCandidateLoading.value || page < 1 || page > groupCandidateTotalPages.value) return;
+  groupCandidatePage.value = page;
+  await fetchGroupCandidateDevices();
+};
+
+const openGroupModal = async () => {
+  groupDropdownVisible.value = false;
+  if (boundLoading.value) {
+    uni.showToast({ title: '设备加载中，请稍后', icon: 'none' });
+    return;
+  }
+  if (allBoundTotal.value === 0) {
+    uni.showToast({ title: '暂无可分组设备', icon: 'none' });
+    return;
+  }
+  groupName.value = '';
+  selectedGroupDeviceIds.value = [];
+  groupCandidatePage.value = 1;
+  groupModalVisible.value = true;
+  await fetchGroupCandidateDevices();
+};
+
+const closeGroupModal = () => {
+  if (groupSubmitting.value) return;
+  groupModalVisible.value = false;
+  groupName.value = '';
+  selectedGroupDeviceIds.value = [];
+};
+
+const isGroupDeviceSelected = (deviceId) => {
+  return selectedGroupDeviceIds.value.includes(Number(deviceId));
+};
+
+const toggleGroupDevice = (deviceId) => {
+  const id = Number(deviceId);
+  const index = selectedGroupDeviceIds.value.indexOf(id);
+  if (index === -1) selectedGroupDeviceIds.value.push(id);
+  else selectedGroupDeviceIds.value.splice(index, 1);
+};
+
+const createDeviceGroup = async () => {
+  const name = groupName.value.trim();
+  if (!name) {
+    uni.showToast({ title: '请输入分组名称', icon: 'none' });
+    return;
+  }
+  if (selectedGroupDeviceIds.value.length === 0) {
+    uni.showToast({ title: '请至少选择一台设备', icon: 'none' });
+    return;
+  }
+  if (groupSubmitting.value) return;
+
+  groupSubmitting.value = true;
+  uni.showLoading({ title: '正在创建...', mask: true });
+  try {
+    const created = await http.post('/api/device-groups', {
+      name,
+      deviceIds: selectedGroupDeviceIds.value
+    });
+    await fetchDeviceGroups();
+    selectedGroupId.value = created?.id || 'all';
+    boundPage.value = 1;
+    await fetchBoundDevices();
+    groupModalVisible.value = false;
+    groupName.value = '';
+    selectedGroupDeviceIds.value = [];
+    uni.showToast({ title: '分组创建成功', icon: 'success' });
+  } catch (error) {
+    uni.showToast({
+      title: typeof error === 'string' ? error : '分组创建失败',
+      icon: 'none'
+    });
+  } finally {
+    groupSubmitting.value = false;
+    uni.hideLoading();
+  }
+};
+
+// 待硬件协议确认后，只需补充开启、关闭指令内容。
+const DEVICE_SWITCH_COMMANDS = {
+  on: '',
+  off: ''
+};
+
+const findMetricValue = (rawData, names) => {
+  const raw = String(rawData || '');
+  const match = raw.match(new RegExp(`(?:^|[|\\r\\n])(?:${names.join('|')})\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)`, 'i'));
+  return match ? Number(match[1]) : null;
+};
+
+const parseRunMode = (rawData) => {
+  const match = String(rawData || '').match(/(?:^|\r?\n)\$4=(-?\d+)/);
+  if (!match) return '--';
+  const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
+  return modeMap[Number(match[1])] || '未知';
+};
+
+const parseDeviceMetrics = (result) => {
+  const rawData = typeof result?.data === 'string' ? result.data : '';
+  return {
+    voltage: result?.voltage ?? findMetricValue(rawData, ['Voltage', 'Volt', '电压']),
+    current: result?.current ?? findMetricValue(rawData, ['Current', 'Curr', '电流']),
+    runMode: parseRunMode(rawData),
+    rawData,
+    timestamp: result?.timestamp || ''
+  };
+};
+
+const fetchBoundDeviceStatuses = async (devices) => {
+  const currentDevices = Array.isArray(devices) ? devices : [];
+  if (currentDevices.length === 0) return;
+
+  currentDevices.forEach(device => {
+    device.statusLoading = true;
+    device.statusError = '';
+  });
+
+  try {
+    const result = await http.post('/api/devices/batchQueryStatus', {
+      deviceCodes: currentDevices.map(device => device.deviceCode),
+      timeout: 5000
+    }, { timeout: 8000 });
+    const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
+
+    currentDevices.forEach(device => {
+      const status = statusMap.get(device.deviceCode);
+      if (!status?.success) {
+        device.online = 0;
+        device.statusError = status?.error || '设备状态获取失败';
+        return;
+      }
+      device.online = 1;
+      const metrics = parseDeviceMetrics(status);
+      device.voltage = metrics.voltage;
+      device.current = metrics.current;
+      device.runMode = metrics.runMode;
+      device.rawStatusData = metrics.rawData;
+      device.statusTimestamp = metrics.timestamp;
+    });
+  } catch (error) {
+    currentDevices.forEach(device => {
+      device.statusError = typeof error === 'string' ? error : '设备状态获取失败';
+    });
+  } finally {
+    currentDevices.forEach(device => {
+      device.statusLoading = false;
+    });
+  }
+};
+
+const handleDeviceSwitch = async (device) => {
+  if (device.online !== 1) {
+    uni.showToast({ title: '设备离线，无法操作', icon: 'none' });
+    return;
+  }
+  if (device.switchLoading) return;
+
+  const nextSwitchOn = device.switchOn !== true;
+  const command = nextSwitchOn ? DEVICE_SWITCH_COMMANDS.on : DEVICE_SWITCH_COMMANDS.off;
+  if (!command) {
+    uni.showToast({ title: '开关指令待配置', icon: 'none' });
+    return;
+  }
+
+  device.switchLoading = true;
+  try {
+    await http.post('/api/devices/command', {
+      deviceCode: device.deviceCode,
+      type: 'send',
+      params: { data: command },
+      timeout: 10000
+    }, { timeout: 12000 });
+    device.switchOn = nextSwitchOn;
+    uni.showToast({ title: nextSwitchOn ? '已开启' : '已关闭', icon: 'success' });
+  } catch (error) {
+    uni.showToast({
+      title: typeof error === 'string' ? error : '操作失败',
+      icon: 'none'
+    });
+  } finally {
+    device.switchLoading = false;
+  }
+};
+
+const formatMetric = (value, unit) => {
+  if (value === null || value === undefined || value === '') return '--';
+  return `${value} ${unit}`;
+};
+
+const getMetricValueClass = (value, type) => {
+  if (value === null || value === undefined || value === '') return '';
+
+  const metric = Number(value);
+  if (!Number.isFinite(metric)) return '';
+
+  if (type === 'current') {
+    if (metric < 5) return 'metric-value-danger';
+    if (metric < 10) return 'metric-value-warning';
+  } else if (type === 'voltage' && metric < 180) {
+    return 'metric-value-danger';
+  }
+
+  return 'metric-value-success';
+};
 
 const fetchBoundDevices = async () => {
   boundLoading.value = true;
   try {
-    boundDevices.value = await http.get('/api/users/devices');
+    const params = {
+      page: boundPage.value,
+      pageSize: DEVICE_PAGE_SIZE
+    };
+    if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value;
+
+    const result = await http.get('/api/users/devices', params);
+    boundTotal.value = Number(result?.total) || 0;
+    if (selectedGroupId.value === 'all') allBoundTotal.value = boundTotal.value;
+    boundTotalPages.value = Number(result?.totalPages) || 0;
+    boundDevices.value = (Array.isArray(result?.list) ? result.list : []).map(device => ({
+      ...device,
+      online: 0,
+      voltage: null,
+      current: null,
+      runMode: '--',
+      statusLoading: false,
+      statusError: '',
+      rawStatusData: '',
+      statusTimestamp: '',
+      switchOn: null,
+      switchLoading: false
+    }));
+    // 卡片先显示，再通过单个批量接口查询当前页 10 台设备的实时状态。
+    fetchBoundDeviceStatuses(boundDevices.value);
   } catch (e) {
-    // 静默失败，不影响蓝牙功能
+    boundDevices.value = [];
+    boundTotal.value = 0;
+    boundTotalPages.value = 0;
   } finally {
     boundLoading.value = false;
   }
+};
+
+const changeBoundPage = async (page) => {
+  if (boundLoading.value || page < 1 || page > boundTotalPages.value) return;
+  boundPage.value = page;
+  await fetchBoundDevices();
 };
 
 // ============ 蓝牙扫描（copy from index.vue）============
@@ -340,14 +788,21 @@ const stopSilentScan = () => {
   } catch (e) { }
 };
 
+const handleBoundDeviceNameUpdated = (payload) => {
+  const device = boundDevices.value.find(item => item.deviceCode === payload?.deviceCode);
+  if (device && payload.deviceName) device.deviceName = payload.deviceName;
+};
+
 onMounted(() => {
-  fetchBoundDevices();
+  uni.$on('UPDATE_NETWORK_DEVICE_NAME', handleBoundDeviceNameUpdated);
   uni.getSystemInfo({
     success: (res) => { appVersion.value = res.appWgtVersion; }
   });
 });
 
 onShow(() => {
+  fetchBoundDevices();
+  fetchDeviceGroups();
   loadSavedDevices();
   // 关闭旧连接，释放设备让其恢复广播
 	try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) {}
@@ -355,7 +810,10 @@ onShow(() => {
 });
 
 onHide(stopSilentScan);
-onUnmounted(stopSilentScan);
+onUnmounted(() => {
+  stopSilentScan();
+  uni.$off('UPDATE_NETWORK_DEVICE_NAME', handleBoundDeviceNameUpdated);
+});
 
 // ============ 滑动操作 ============
 const swipeOptions = ref([
@@ -435,9 +893,15 @@ const handleManualRefresh = () => {
   stopSilentScan();
   try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) { }
   devices.value = [];
-  setTimeout(() => { loadSavedDevices(); // 关闭旧连接，释放设备让其恢复广播
-	try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) {}
-	startSilentScan(); fetchBoundDevices(); uni.hideLoading(); uni.showToast({ title: '重置成功', icon: 'success' }); }, 500);
+  setTimeout(async () => {
+    loadSavedDevices();
+    // 关闭旧连接，释放设备让其恢复广播
+    try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) { }
+    startSilentScan();
+    await Promise.allSettled([fetchBoundDevices(), fetchDeviceGroups()]);
+    uni.hideLoading();
+    uni.showToast({ title: '重置成功', icon: 'success' });
+  }, 500);
 };
 
 const turnAllOn = () => {
@@ -449,7 +913,15 @@ const turnAllOff = () => {
 };
 
 const toBoundDevice = (item) => {
-  // 点击已绑定设备，暂不处理
+  if (!item?.deviceCode) {
+    uni.showToast({ title: '设备编号缺失', icon: 'none' });
+    return;
+  }
+
+  const name = item.deviceName || item.deviceCode;
+  uni.navigateTo({
+    url: `/pages/networkDeviceState/index?deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}`
+  });
 };
 </script>
 
@@ -584,9 +1056,141 @@ const toBoundDevice = (item) => {
 
 .section-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 20rpx;
+}
+
+.device-section {
+  position: relative;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+}
+
+.section-actions .section-add-btn {
+  margin-left: 16rpx;
+}
+
+.group-select {
+  position: relative;
+  min-width: 168rpx;
+  max-width: 240rpx;
+  height: 52rpx;
+  padding: 0 18rpx;
+  border: 1rpx solid #E8EAF0;
+  border-radius: 17rpx;
+  background: #FFFFFF;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 3rpx 12rpx rgba(45, 49, 57, 0.04);
+
+  &.open {
+    z-index: 1002;
+    border-color: rgba($primary-color, 0.45);
+
+    .group-select-arrow {
+      transform: rotate(225deg);
+      margin-top: 5rpx;
+    }
+  }
+}
+
+.group-select-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 23rpx;
+  line-height: 32rpx;
+  color: #5E6166;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-select-arrow {
+  width: 10rpx;
+  height: 10rpx;
+  flex-shrink: 0;
+  margin-left: 12rpx;
+  margin-top: -5rpx;
+  border-right: 3rpx solid #969CA7;
+  border-bottom: 3rpx solid #969CA7;
+  transform: rotate(45deg);
+  transition: transform 0.18s ease, margin-top 0.18s ease;
+}
+
+.group-dropdown {
+  position: absolute;
+  right: 0;
+  top: 64rpx;
+  width: 280rpx;
+  max-height: 420rpx;
+  padding: 10rpx;
+  border: 1rpx solid #ECEEF2;
+  border-radius: 20rpx;
+  background: #FFFFFF;
+  box-sizing: border-box;
+  overflow-y: auto;
+  box-shadow: 0 16rpx 40rpx rgba(45, 49, 57, 0.14);
+  z-index: 1003;
+}
+
+.group-option {
+  min-height: 68rpx;
+  padding: 0 18rpx;
+  border-radius: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  &.selected {
+    background: #FFF4E6;
+
+    .group-option-name,
+    .group-option-count {
+      color: $primary-color;
+      font-weight: 600;
+    }
+  }
+
+  &:active {
+    background: #F6F7F9;
+  }
+}
+
+.group-option-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: #4A4E55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-option-count {
+  margin-left: 16rpx;
+  font-size: 21rpx;
+  color: #AAB0BB;
+}
+
+.group-option-empty {
+  padding: 24rpx 16rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: #AAB0BB;
+}
+
+.group-dropdown-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
 }
 
 .batch-row {
@@ -633,6 +1237,49 @@ const toBoundDevice = (item) => {
   color: #AAB0BB;
 }
 
+.section-add-btn {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 17rpx;
+  background: linear-gradient(135deg, #FFA53D, $primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 5rpx 14rpx rgba(247, 150, 25, 0.24);
+
+  &:active {
+    opacity: 0.82;
+    transform: scale(0.94);
+  }
+}
+
+.section-add-icon {
+  position: relative;
+  width: 22rpx;
+  height: 22rpx;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 3rpx;
+    background: #FFFFFF;
+    transform: translate(-50%, -50%);
+  }
+
+  &::before {
+    width: 22rpx;
+    height: 4rpx;
+  }
+
+  &::after {
+    width: 4rpx;
+    height: 22rpx;
+  }
+}
+
 .loading-text {
   font-size: 26rpx;
   color: #B0B5C1;
@@ -640,7 +1287,52 @@ const toBoundDevice = (item) => {
   display: block;
 }
 
-/* ===== 已绑定设备 — 两列网格 ===== */
+.bound-empty {
+  padding: 52rpx 0 58rpx;
+  text-align: center;
+
+  text {
+    font-size: 25rpx;
+    color: #AAB0BB;
+  }
+}
+
+.bound-pagination {
+  margin-top: 4rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination-btn {
+  min-width: 112rpx;
+  height: 58rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid #E5E8ED;
+  border-radius: 18rpx;
+  background: #FFFFFF;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23rpx;
+  color: #565B64;
+
+  &.disabled {
+    background: #F3F4F6;
+    color: #B9BEC7;
+  }
+}
+
+.pagination-info {
+  min-width: 100rpx;
+  margin: 0 18rpx;
+  text-align: center;
+  font-size: 23rpx;
+  color: #8B919B;
+}
+
+/* ===== 已绑定设备 ===== */
 .bound-grid {
   display: flex;
   flex-wrap: wrap;
@@ -651,104 +1343,224 @@ const toBoundDevice = (item) => {
   width: calc(50% - 12rpx);
   margin-bottom: 24rpx;
   background: #FFFFFF;
+  border: 1rpx solid rgba(45, 49, 57, 0.04);
   border-radius: 24rpx;
-  padding: 28rpx 24rpx 24rpx;
+  padding: 20rpx;
   box-sizing: border-box;
-  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.04);
+  box-shadow: 0 5rpx 20rpx rgba(45, 49, 57, 0.05);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 
   &:active {
-    transform: scale(0.97);
+    transform: scale(0.985);
+    box-shadow: 0 3rpx 14rpx rgba(45, 49, 57, 0.04);
   }
 }
 
-.bound-top {
+.bound-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 18rpx;
 }
 
 .bound-icon {
+  position: relative;
   width: 64rpx;
   height: 64rpx;
+  flex-shrink: 0;
   border-radius: 18rpx;
-  background: #F5F6FA;
+  background: #F2F4F7;
   display: flex;
   align-items: center;
   justify-content: center;
 
   .iconfont {
-    font-size: 40rpx;
+    font-size: 38rpx;
     color: #B0B5C1;
   }
 
   &.online {
-    background: #FFF0E0;
+    background: linear-gradient(145deg, #FFF5E9, #FFE8CC);
 
     .iconfont {
-      font-size: 40rpx;
       color: $primary-color;
     }
   }
 }
 
-.bound-status {
-  display: flex;
-  align-items: center;
-}
-
-.status-dot {
-  width: 12rpx;
-  height: 12rpx;
+.connection-dot {
+  position: absolute;
+  right: -3rpx;
+  bottom: -3rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border: 3rpx solid #FFFFFF;
   border-radius: 50%;
-  background: #D0D5DD;
-  margin-right: 8rpx;
+  background: #C7CCD5;
+  box-sizing: content-box;
 
-  &.on {
+  &.online {
     background: #52C41A;
   }
 }
 
-.status-text {
-  font-size: 22rpx;
-  color: #AAB0BB;
+.device-switch {
+  width: 68rpx;
+  height: 38rpx;
+  flex-shrink: 0;
+  padding: 4rpx;
+  border-radius: 22rpx;
+  background: #D9DEE7;
+  box-sizing: border-box;
+  box-shadow: inset 0 1rpx 4rpx rgba(45, 49, 57, 0.1);
+  transition: background 0.2s ease, opacity 0.2s ease;
+
+  &.active {
+    background: linear-gradient(135deg, #FFA53D, $primary-color);
+    box-shadow: 0 4rpx 12rpx rgba(247, 150, 25, 0.24);
+
+    .switch-thumb {
+      transform: translateX(30rpx);
+    }
+  }
+
+  &.disabled {
+    opacity: 0.45;
+  }
+
+  &:active:not(.disabled) {
+    opacity: 0.8;
+  }
+}
+
+.switch-thumb {
+  width: 30rpx;
+  height: 30rpx;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 2rpx 8rpx rgba(45, 49, 57, 0.22);
+  transition: transform 0.2s ease;
+}
+
+.bound-info {
+  min-width: 0;
+  margin-top: 14rpx;
 }
 
 .bound-name {
-  font-size: 28rpx;
-  font-weight: 600;
+  font-size: 27rpx;
+  font-weight: 700;
   color: #2D3139;
   display: block;
-  margin-bottom: 6rpx;
+  line-height: 38rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .bound-code {
-  font-size: 20rpx;
-  color: #B0B5C1;
+  margin-top: 2rpx;
+  font-size: 19rpx;
+  line-height: 28rpx;
+  color: #9CA3AF;
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.bound-metrics {
+  margin-top: 16rpx;
+  padding: 14rpx 4rpx;
+  border-radius: 16rpx;
+  background: #F7F8FA;
+  display: flex;
+  align-items: center;
+}
+
+.bound-metric {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.metric-label {
+  font-size: 19rpx;
+  color: #9CA3AF;
+  margin-bottom: 6rpx;
+}
+
+.metric-value {
+  font-size: 25rpx;
+  line-height: 32rpx;
+  font-weight: 700;
+  color: #2D3139;
+}
+
+.metric-value-success {
+  color: #52C41A;
+}
+
+.metric-value-warning {
+  color: #FA8C16;
+}
+
+.metric-value-danger {
+  color: #FF4D4F;
+}
+
+.metric-divider {
+  width: 1rpx;
+  height: 40rpx;
+  background: #E4E7EC;
+}
+
+.mode-row {
+  margin-top: 12rpx;
+  padding: 11rpx 13rpx;
+  border-radius: 14rpx;
+  background: #FFF8EF;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mode-label {
+  font-size: 19rpx;
+  color: #A98257;
+}
+
+.mode-value {
+  max-width: 110rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
+  font-weight: 700;
+  color: $primary-color;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ===== 蓝牙设备卡片 ===== */
-.device-card {
+.device-card-container {
   width: 100%;
+  padding: 10rpx;
   box-sizing: border-box;
+}
+
+.device-card {
   background-color: #FFFFFF;
   border-radius: 32rpx;
   padding: 24rpx 30rpx;
   display: flex;
   align-items: center;
-  box-shadow: 0 8rpx 30rpx rgba(0, 0, 0, 0.04);
-  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 10rpx rgba(45, 49, 57, 0.025), 0 10rpx 28rpx rgba(45, 49, 57, 0.025);
+  transition: all 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 
   &:active {
     transform: scale(0.96);
-    box-shadow: 0 4rpx 10rpx rgba(0, 0, 0, 0.02);
+    box-shadow: 0 2rpx 8rpx rgba(45, 49, 57, 0.02);
   }
 }
 
@@ -791,6 +1603,12 @@ const toBoundDevice = (item) => {
   color: #FFFFFF;
   padding: 2rpx 10rpx;
   border-radius: 6rpx;
+  flex-shrink: 0;
+}
+
+.info-bottom {
+  display: flex;
+  align-items: center;
 }
 
 .d-id {
@@ -802,21 +1620,30 @@ const toBoundDevice = (item) => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  margin-left: 10rpx;
+  margin-left: 20rpx;
+}
+
+.signal-box {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 8rpx;
 }
 
 .signal-icon {
   display: flex;
   align-items: flex-end;
-  gap: 4rpx;
   height: 32rpx;
-  margin-bottom: 8rpx;
 }
 
 .signal-bar {
   width: 8rpx;
   background-color: #E0E0E0;
   border-radius: 2rpx;
+}
+
+.signal-bar + .signal-bar {
+  margin-left: 4rpx;
 }
 
 .signal-bar:nth-child(1) { height: 12rpx; }
@@ -878,6 +1705,317 @@ const toBoundDevice = (item) => {
   font-size: 22rpx;
   color: #BEC4CC;
   letter-spacing: 2rpx;
+}
+
+/* ===== 新建设备分组弹窗 ===== */
+.group-modal-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  padding: 30rpx;
+  box-sizing: border-box;
+  background: rgba(27, 31, 38, 0.48);
+  backdrop-filter: blur(8rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1300;
+}
+
+.group-modal {
+  width: 650rpx;
+  max-width: 100%;
+  max-height: 86vh;
+  border-radius: 32rpx;
+  background: #FFFFFF;
+  overflow: hidden;
+  box-shadow: 0 24rpx 70rpx rgba(26, 30, 36, 0.2);
+}
+
+.group-modal-header {
+  padding: 32rpx 32rpx 24rpx;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.group-modal-title,
+.group-modal-subtitle {
+  display: block;
+}
+
+.group-modal-title {
+  font-size: 34rpx;
+  line-height: 46rpx;
+  font-weight: 700;
+  color: #2D3139;
+}
+
+.group-modal-subtitle {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #A0A6B1;
+}
+
+.group-modal-close {
+  width: 52rpx;
+  height: 52rpx;
+  margin-left: 20rpx;
+  border-radius: 16rpx;
+  background: #F4F5F7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  line-height: 48rpx;
+  font-weight: 300;
+  color: #858B96;
+}
+
+.group-modal-body {
+  padding: 0 32rpx 28rpx;
+}
+
+.group-field-label {
+  font-size: 24rpx;
+  line-height: 34rpx;
+  font-weight: 600;
+  color: #545860;
+}
+
+.group-name-input-wrap {
+  height: 82rpx;
+  margin-top: 12rpx;
+  padding: 0 24rpx;
+  border: 2rpx solid #ECEEF2;
+  border-radius: 18rpx;
+  background: #F8F9FB;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+
+  &:focus-within {
+    border-color: rgba($primary-color, 0.5);
+    background: #FFFFFF;
+    box-shadow: 0 0 0 6rpx rgba($primary-color, 0.08);
+  }
+}
+
+.group-name-input {
+  width: 100%;
+  font-size: 28rpx;
+  color: #2D3139;
+}
+
+.group-device-title-row {
+  margin-top: 28rpx;
+  margin-bottom: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.group-selected-count {
+  font-size: 22rpx;
+  color: $primary-color;
+}
+
+.group-device-list {
+  height: 400rpx;
+}
+
+.group-device-loading {
+  padding: 60rpx 0;
+  display: block;
+  text-align: center;
+  font-size: 24rpx;
+  color: #AAB0BB;
+}
+
+.group-device-item {
+  min-height: 88rpx;
+  margin-bottom: 12rpx;
+  padding: 14rpx 16rpx;
+  border: 2rpx solid #EEF0F3;
+  border-radius: 18rpx;
+  background: #FFFFFF;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+
+  &.selected {
+    border-color: rgba($primary-color, 0.48);
+    background: #FFF9F2;
+  }
+}
+
+.group-device-icon {
+  width: 56rpx;
+  height: 56rpx;
+  flex-shrink: 0;
+  border-radius: 16rpx;
+  background: #F0F2F5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .iconfont {
+    font-size: 32rpx;
+    color: #AEB4BE;
+  }
+
+  &.online {
+    background: #FFF0DD;
+
+    .iconfont {
+      color: $primary-color;
+    }
+  }
+}
+
+.group-device-info {
+  flex: 1;
+  min-width: 0;
+  margin: 0 18rpx;
+}
+
+.group-device-name,
+.group-device-code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-device-name {
+  font-size: 25rpx;
+  line-height: 34rpx;
+  font-weight: 600;
+  color: #353941;
+}
+
+.group-device-code {
+  margin-top: 2rpx;
+  font-size: 19rpx;
+  line-height: 28rpx;
+  color: #A0A6B1;
+}
+
+.group-device-check {
+  position: relative;
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+  border: 2rpx solid #D9DDE4;
+  border-radius: 11rpx;
+  box-sizing: border-box;
+
+  &.checked {
+    border-color: $primary-color;
+    background: $primary-color;
+
+    .group-device-checkmark {
+      opacity: 1;
+    }
+  }
+}
+
+.group-device-checkmark {
+  position: absolute;
+  left: 11rpx;
+  top: 5rpx;
+  width: 9rpx;
+  height: 16rpx;
+  border-right: 3rpx solid #FFFFFF;
+  border-bottom: 3rpx solid #FFFFFF;
+  opacity: 0;
+  transform: rotate(45deg);
+}
+
+.group-device-empty {
+  padding: 60rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: #AAB0BB;
+}
+
+.group-device-pagination {
+  margin-top: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.group-page-btn {
+  min-width: 104rpx;
+  height: 52rpx;
+  padding: 0 18rpx;
+  border: 1rpx solid #E5E8ED;
+  border-radius: 16rpx;
+  background: #FFFFFF;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  color: #565B64;
+
+  &.disabled {
+    background: #F3F4F6;
+    color: #B9BEC7;
+  }
+}
+
+.group-page-info {
+  min-width: 88rpx;
+  margin: 0 16rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: #8B919B;
+}
+
+.group-modal-footer {
+  padding: 22rpx 32rpx 30rpx;
+  border-top: 1rpx solid #EEF0F3;
+  display: flex;
+}
+
+.group-cancel-btn,
+.group-create-btn {
+  flex: 1;
+  height: 82rpx;
+  margin: 0;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27rpx;
+  font-weight: 600;
+
+  &::after {
+    border: none;
+  }
+}
+
+.group-cancel-btn {
+  margin-right: 20rpx;
+  background: #F1F3F6;
+  color: #656A73;
+}
+
+.group-create-btn {
+  background: linear-gradient(135deg, #FFA53D, $primary-color);
+  color: #FFFFFF;
+  box-shadow: 0 7rpx 18rpx rgba(247, 150, 25, 0.22);
+
+  &[disabled] {
+    opacity: 0.6;
+  }
 }
 
 /* ===== 编辑弹窗 ===== */

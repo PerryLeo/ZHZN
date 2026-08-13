@@ -11,6 +11,7 @@ router.post('/login', UserController.login);
 // 需登录
 router.post('/bindDevice', auth, UserController.bindDevice);
 router.get('/devices', auth, UserController.myDevices);
+router.post('/updateDeviceName', auth, UserController.updateDeviceName);
 router.post('/unbindDevice', auth, UserController.unbindDevice);
 router.post('/resetPassword', auth, UserController.resetPassword);
 router.post('/changePassword', auth, UserController.changePassword);

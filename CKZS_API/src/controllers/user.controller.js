@@ -1,8 +1,10 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { User, Device } from '../models/index.js';
+import { Op } from 'sequelize';
+import sequelize from '../config/database.js';
+import { User, Device, DeviceGroup, DeviceGroupMember } from '../models/index.js';
 import config from '../config/index.js';
-import { success, fail } from '../utils/response.js';
+import { success, fail, paginate } from '../utils/response.js';
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -128,13 +130,58 @@ export const UserController = {
   // ==================== 我的设备列表 ====================
   async myDevices(req, res) {
     try {
-      const devices = await Device.findAll({
-        where: { userId: req.user.id },
+      const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+      const pageSize = Math.min(Math.max(Number.parseInt(req.query.pageSize, 10) || 10, 1), 100);
+      const groupId = Number.parseInt(req.query.groupId, 10);
+      const where = { userId: req.user.id, status: 1 };
+
+      if (Number.isInteger(groupId) && groupId > 0) {
+        const group = await DeviceGroup.findOne({
+          where: { id: groupId, userId: req.user.id },
+          attributes: ['id'],
+        });
+        if (!group) return fail(res, '设备分组不存在或不属于当前用户', 404);
+
+        const members = await DeviceGroupMember.findAll({
+          where: { groupId },
+          attributes: ['deviceId'],
+        });
+        where.id = { [Op.in]: members.map(member => member.deviceId) };
+      }
+
+      const { count, rows } = await Device.findAndCountAll({
+        where,
         order: [['bindAt', 'DESC']],
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
       });
-      return success(res, devices);
+      return paginate(res, { list: rows, total: count, page, pageSize });
     } catch (err) {
       return fail(res, err.message);
+    }
+  },
+
+  // ==================== 修改已绑定设备名称 ====================
+  async updateDeviceName(req, res) {
+    try {
+      const { deviceCode, deviceName } = req.body;
+      const name = String(deviceName || '').trim();
+
+      if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
+      if (!name) return fail(res, '设备名称不能为空');
+      if (name.length > 100) return fail(res, '设备名称不能超过 100 个字符');
+
+      const device = await Device.findOne({
+        where: { deviceCode, userId: req.user.id, status: 1 },
+      });
+      if (!device) return fail(res, '设备不存在或不属于当前用户', 404);
+
+      device.deviceName = name;
+      await device.save();
+
+      return success(res, device, '设备名称修改成功');
+    } catch (err) {
+      return fail(res, err.message || '设备名称修改失败');
     }
   },
 
@@ -162,23 +209,36 @@ export const UserController = {
 
   // ==================== 解绑设备 ====================
   async unbindDevice(req, res) {
+    let transaction = null;
     try {
       const { deviceCode } = req.body;
       if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
 
+      transaction = await sequelize.transaction();
       const device = await Device.findOne({
         where: { deviceCode, userId: req.user.id },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
       });
-      if (!device) return fail(res, '设备不存在或不属于当前用户', 404);
+      if (!device) {
+        await transaction.rollback();
+        return fail(res, '设备不存在或不属于当前用户', 404);
+      }
 
+      await DeviceGroupMember.destroy({
+        where: { deviceId: device.id },
+        transaction,
+      });
       device.userId = null;
       device.status = 0;
       device.online = 0;
       device.bindAt = null;
-      await device.save();
+      await device.save({ transaction });
+      await transaction.commit();
 
       return success(res, device, '设备解绑成功');
     } catch (err) {
+      if (transaction && !transaction.finished) await transaction.rollback();
       return fail(res, err.message || '解绑失败');
     }
   },

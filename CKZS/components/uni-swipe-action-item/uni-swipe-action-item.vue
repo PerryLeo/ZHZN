@@ -256,6 +256,9 @@
 
 	.uni-swipe_text--center {
 		width: 100%;
+		position: relative;
+		z-index: 1;
+		background-color: #F6F7FB;
 		/* #ifndef APP-NVUE */
 		cursor: grab;
 		/* #endif */
@@ -270,6 +273,7 @@
 		position: absolute;
 		top: 0;
 		bottom: 0;
+		z-index: 0;
 		/* #ifdef H5 */
 		cursor: pointer;
 		/* #endif */

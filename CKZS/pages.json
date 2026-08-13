@@ -52,6 +52,24 @@
 			}
 		},
 		{
+			"path": "pages/networkDeviceState/index",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/networkDeviceState/paramsSet",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/networkDeviceState/alarmClock",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/index/bluetooth",
 			"style": {
 				"navigationStyle": "custom"

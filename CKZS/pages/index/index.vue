@@ -564,12 +564,12 @@ const handleManualRefresh = () => {
 	padding: 24rpx 30rpx;
 	display: flex;
 	align-items: center;
-	box-shadow: 0 8rpx 30rpx rgba(0, 0, 0, 0.04);
+	box-shadow: 0 2rpx 10rpx rgba(45, 49, 57, 0.025), 0 10rpx 28rpx rgba(45, 49, 57, 0.025);
 	transition: all 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 
 	&:active {
 		transform: scale(0.96);
-		box-shadow: 0 4rpx 10rpx rgba(0, 0, 0, 0.02);
+		box-shadow: 0 2rpx 8rpx rgba(45, 49, 57, 0.02);
 	}
 
 	.device-icon-box {
@@ -639,13 +639,16 @@ const handleManualRefresh = () => {
 			.signal-icon {
 				display: flex;
 				align-items: flex-end;
-				gap: 4rpx;
 				height: 32rpx;
 
 				.signal-bar {
 					width: 8rpx;
 					background-color: #E0E0E0;
 					border-radius: 2rpx;
+
+					& + .signal-bar {
+						margin-left: 4rpx;
+					}
 
 					&:nth-child(1) {
 						height: 12rpx;

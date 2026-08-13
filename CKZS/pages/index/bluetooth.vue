@@ -500,13 +500,16 @@ onUnmounted(() => stopScan());
             .signal-icon {
                 display: flex;
                 align-items: flex-end;
-                gap: 4rpx;
                 height: 32rpx;
 
                 .signal-bar {
                     width: 8rpx;
                     background-color: #E0E0E0;
                     border-radius: 2rpx;
+
+                    & + .signal-bar {
+                        margin-left: 4rpx;
+                    }
 
                     &:nth-child(1) {
                         height: 12rpx;

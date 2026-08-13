@@ -6,5 +6,6 @@ const router = Router();
 
 router.post('/command', auth, DeviceController.sendCommand);
 router.post('/batchCommand', auth, DeviceController.batchCommand);
+router.post('/batchQueryStatus', auth, DeviceController.batchQueryStatus);
 
 export default router;

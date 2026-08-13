@@ -91,7 +91,7 @@
                                     {{ (state.softLimit / 10).toFixed(1) }}
                                 </text>
                                 <text v-if="state.softLimit && state.softLimit > 0" class="unit">米</text>
-                                <text v-else class="val">关闭</text>
+                                <text v-else class="val soft-limit-off">关闭</text>
                             </view>
                             <text class="lab">距离软限位</text>
                         </view>
@@ -447,6 +447,10 @@ const handleRefresh = () => {
     z-index: 2;
     padding: 0 30rpx;
     padding-top: calc(var(--status-bar-height) + 20rpx);
+    padding-bottom: 40rpx;
+    padding-bottom: calc(40rpx + constant(safe-area-inset-bottom));
+    padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
 }
@@ -644,12 +648,12 @@ const handleRefresh = () => {
 }
 
 .action-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 30rpx;
+    display: flex;
     margin-bottom: 40rpx;
 
     .action-card {
+        flex: 1;
+        min-width: 0;
         background: #fff;
         border-radius: 36rpx;
         padding: 40rpx;
@@ -658,6 +662,10 @@ const handleRefresh = () => {
         align-items: center;
         box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.04);
         transition: transform 0.2s;
+
+        & + .action-card {
+            margin-left: 30rpx;
+        }
 
         &:active {
             transform: scale(0.96);
@@ -728,6 +736,7 @@ const handleRefresh = () => {
             .val-box {
                 display: flex;
                 align-items: baseline;
+                height: 40rpx;
                 margin-bottom: 8rpx;
 
                 .val {
@@ -735,6 +744,11 @@ const handleRefresh = () => {
                     font-weight: 700;
                     color: #2D3139;
                     white-space: nowrap;
+
+                    &.soft-limit-off {
+                        font-size: 30rpx;
+                        font-weight: 700;
+                    }
 
                     &.highlight {
                         color: $primary-color;

@@ -187,7 +187,13 @@ const handleClose = () => {
 <style lang="scss" scoped>
 .w-datetime-mask {
     position: fixed;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
     z-index: 999;
     display: flex;
     flex-direction: column;

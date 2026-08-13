@@ -286,7 +286,7 @@ const handleAutoDataBlur = () => {
     if (!customCmd.value) return;
     responseContent.value = '';
     isWaitingCustom.value = true;
-    setDeviceData(customCmd.value + '\n');
+    setDeviceData(customCmd.value);
     setTimeout(() => { isWaitingCustom.value = false; }, 5000);
 };
 
@@ -546,7 +546,13 @@ const confirmDelete = () => {
 
 .custom-modal-mask {
     position: fixed;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
     background: rgba(0, 0, 0, 0.4);
     z-index: 999;
     display: flex;

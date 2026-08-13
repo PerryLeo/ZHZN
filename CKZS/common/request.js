@@ -51,6 +51,20 @@ const request = (method, url, data, options = {}) => {
 
         const { statusCode, data: body } = res;
 
+        // Token 过期 / 未登录
+        if (statusCode === 401 || body?.code === 401) {
+          uni.removeStorageSync(TOKEN_KEY);
+          uni.removeStorageSync('USER_INFO');
+          const pages = getCurrentPages();
+          const current = pages[pages.length - 1]?.route;
+          if (current && !current.includes('login/')) {
+            uni.showToast({ title: '登录已过期，请重新登录', icon: 'none', duration: 2000 });
+            setTimeout(() => uni.reLaunch({ url: '/pages/login/login' }), 1500);
+          }
+          reject(body.message || 'Token 已过期');
+          return;
+        }
+
         // HTTP 状态码异常
         if (statusCode < 200 || statusCode >= 300) {
           const msg = `HTTP ${statusCode}: ${body?.message || '服务器异常'}`;
@@ -61,20 +75,6 @@ const request = (method, url, data, options = {}) => {
         // 业务码成功
         if (body && body.code === 0) {
           resolve(body.data);
-          return;
-        }
-
-        // Token 过期 / 未登录
-        if (body && (body.code === 401 || statusCode === 401)) {
-          uni.removeStorageSync(TOKEN_KEY);
-          uni.removeStorageSync('USER_INFO');
-          const pages = getCurrentPages();
-          const current = pages[pages.length - 1]?.route;
-          if (current && !current.includes('login/')) {
-            uni.showToast({ title: '登录已过期，请重新登录', icon: 'none', duration: 2000 });
-            setTimeout(() => uni.reLaunch({ url: '/pages/login/login' }), 1500);
-          }
-          reject(body.message || 'Token 已过期');
           return;
         }
 
