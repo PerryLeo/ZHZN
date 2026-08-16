@@ -45,16 +45,6 @@
                             <text class="unit">趟</text>
                         </view>
                     </view>
-                    <view class="setting-item" @click="openModePicker">
-                        <text class="label">运行模式</text>
-                        <view class="right-box">
-                            <text class="value">{{ runMode }}</text>
-                            <text class="iconfont icon-arrow-right"></text>
-                        </view>
-                    </view>
-                </view>
-
-                <view class="settings-group">
                     <view class="setting-item">
                         <text class="label">喂食超时时间</text>
                         <view class="right-box">
@@ -63,6 +53,9 @@
                             <text class="unit">s</text>
                         </view>
                     </view>
+                </view>
+
+                <view class="settings-group">
                     <view class="setting-item">
                         <text class="label">距离软限位</text>
                         <view class="right-box">
@@ -87,9 +80,43 @@
                             <text class="unit">%</text>
                         </view>
                     </view>
+                    <view class="setting-item">
+                        <text class="label">移动速度</text>
+                        <view class="right-box">
+                            <input class="item-input" v-model="moveSpeed" type="number"
+                                @blur="handleMoveSpeedBlur" />
+                            <text class="unit">%</text>
+                        </view>
+                    </view>
                 </view>
 
                 <view class="settings-group">
+                    <view class="setting-item">
+                        <text class="label">充电目标电压</text>
+                        <view class="right-box"><input class="item-input" v-model="chargingTargetVoltage" type="number" @blur="handleDataBlur('$d=', chargingTargetVoltage)" /></view>
+                    </view>
+                    <view class="setting-item">
+                        <text class="label">充电电流限制</text>
+                        <view class="right-box"><input class="item-input" v-model="chargingCurrentLimit" type="number" @blur="handleDataBlur('$e=', chargingCurrentLimit)" /></view>
+                    </view>
+                    <view class="setting-item">
+                        <text class="label">启动最低电压</text>
+                        <view class="right-box"><input class="item-input" v-model="startMinimumVoltage" type="number" @blur="handleDataBlur('$f=', startMinimumVoltage)" /></view>
+                    </view>
+                    <view class="setting-item">
+                        <text class="label">自动关机时间</text>
+                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /></view>
+                    </view>
+                </view>
+
+                <view class="settings-group">
+                    <view class="setting-item" @click="openModePicker">
+                        <text class="label">运行模式</text>
+                        <view class="right-box">
+                            <text class="value">{{ runMode }}</text>
+                            <text class="iconfont icon-arrow-right"></text>
+                        </view>
+                    </view>
                     <view class="setting-item">
                         <text class="label">设备版本</text>
                         <view class="right-box">
@@ -173,6 +200,11 @@ const feedTimeout = ref('0');
 const softLimit = ref('0');
 const feedSpeed = ref('0');
 const motorTorque = ref('0');
+const moveSpeed = ref('0');
+const chargingTargetVoltage = ref('0');
+const chargingCurrentLimit = ref('0');
+const startMinimumVoltage = ref('0');
+const autoShutdownTime = ref('0');
 const version = ref('');
 const appVersion = ref('');
 const deviceCode = ref('');
@@ -201,6 +233,11 @@ onLoad((options) => {
                 ? data.feedSpeed / 10
                 : (data.feedSpeed / 10).toFixed(1);
             motorTorque.value = data.motorTorque;
+            moveSpeed.value = data.moveSpeed ?? 0;
+            chargingTargetVoltage.value = data.chargingTargetVoltage ?? 0;
+            chargingCurrentLimit.value = data.chargingCurrentLimit ?? 0;
+            startMinimumVoltage.value = data.startMinimumVoltage ?? 0;
+            autoShutdownTime.value = data.autoShutdownTime ?? 0;
             version.value = data.version;
         } catch (error) {
             console.error('Data error:', error);
@@ -267,6 +304,15 @@ const setDeviceData = async (cmd, { showResponse = false } = {}) => {
 const handleDataBlur = (header, value) => {
     if (value === '' || value === null || value === undefined) return;
     setDeviceData(header + value);
+};
+
+const handleMoveSpeedBlur = () => {
+    const value = Number(moveSpeed.value);
+    if (!Number.isFinite(value) || value < 50 || value > 100) {
+        uni.showToast({ title: '移动速度需为50-100%', icon: 'none' });
+        return;
+    }
+    setDeviceData(`$a=${value}`);
 };
 
 const handleAutoDataBlur = () => {

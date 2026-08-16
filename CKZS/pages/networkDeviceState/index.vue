@@ -66,12 +66,19 @@
                             </view>
                             <text class="lab">远端等待时间</text>
                         </view>
-                        <view class="data-item">
+                        <view class="data-item border-line">
                             <view class="val-box">
                                 <text class="val">{{ state.manualTripsVal }}</text>
                                 <text class="unit">趟</text>
                             </view>
                             <text class="lab">手动模式趟数</text>
+                        </view>
+                        <view class="data-item">
+                            <view class="val-box">
+                                <text class="val">{{ state.feedTimeout }}</text>
+                                <text class="unit">s</text>
+                            </view>
+                            <text class="lab">喂食超时时间</text>
                         </view>
                     </view>
                 </view>
@@ -79,12 +86,26 @@
                 <view class="data-card mt-30">
                     <view class="data-row">
                         <view class="data-item border-line">
-                            <view class="val-box">
-                                <text class="val">{{ state.feedTimeout }}</text>
-                                <text class="unit">s</text>
-                            </view>
-                            <text class="lab">喂食超时时间</text>
+                            <view class="val-box"><text class="val">{{ state.chargingTargetVoltage }}</text></view>
+                            <text class="lab">充电目标电压</text>
                         </view>
+                        <view class="data-item border-line">
+                            <view class="val-box"><text class="val">{{ state.chargingCurrentLimit }}</text></view>
+                            <text class="lab">充电电流限制</text>
+                        </view>
+                        <view class="data-item border-line">
+                            <view class="val-box"><text class="val">{{ state.startMinimumVoltage }}</text></view>
+                            <text class="lab">启动最低电压</text>
+                        </view>
+                        <view class="data-item">
+                            <view class="val-box"><text class="val">{{ state.autoShutdownTime }}</text></view>
+                            <text class="lab">自动关机时间</text>
+                        </view>
+                    </view>
+                </view>
+
+                <view class="data-card mt-30">
+                    <view class="data-row">
                         <view class="data-item border-line">
                             <view class="val-box">
                                 <text v-if="state.softLimit && state.softLimit > 0" class="val">
@@ -105,12 +126,19 @@
                             </view>
                             <text class="lab">送料电机转速</text>
                         </view>
-                        <view class="data-item">
+                        <view class="data-item border-line">
                             <view class="val-box">
                                 <text class="val">{{ state.motorTorque }}</text>
                                 <text class="unit">%</text>
                             </view>
                             <text class="lab">送料电机扭矩</text>
+                        </view>
+                        <view class="data-item">
+                            <view class="val-box">
+                                <text class="val">{{ state.moveSpeed }}</text>
+                                <text class="unit">%</text>
+                            </view>
+                            <text class="lab">移动速度</text>
                         </view>
                     </view>
                 </view>
@@ -153,6 +181,11 @@ const state = reactive({
     softLimit: 0,
     feedSpeed: 0,
     motorTorque: 0,
+    moveSpeed: 0,
+    chargingTargetVoltage: 0,
+    chargingCurrentLimit: 0,
+    startMinimumVoltage: 0,
+    autoShutdownTime: 0,
     deviceStatus: '',
     fanStatus: '',
     version: '',
@@ -248,11 +281,11 @@ const parseDeviceResponse = (payload) => {
     if (versionMatch) state.version = versionMatch[1].trim();
 
     const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
-    const valuePattern = /\$(\d+)=(-?\d+)/g;
+    const valuePattern = /\$([0-9ad-g])=(-?\d+(?:\.\d+)?)/g;
     let valueMatch = null;
     while ((valueMatch = valuePattern.exec(text)) !== null) {
         const key = valueMatch[1];
-        const value = parseInt(valueMatch[2]);
+        const value = Number(valueMatch[2]);
         switch (key) {
             case '1': state.nearWaitTime = value; break;
             case '2': state.farWaitTime = value; break;
@@ -263,6 +296,11 @@ const parseDeviceResponse = (payload) => {
             case '7': state.softLimit = value; break;
             case '8': state.feedSpeed = value; break;
             case '9': state.motorTorque = value; break;
+            case 'a': state.moveSpeed = value; break;
+            case 'd': state.chargingTargetVoltage = value; break;
+            case 'e': state.chargingCurrentLimit = value; break;
+            case 'f': state.startMinimumVoltage = value; break;
+            case 'g': state.autoShutdownTime = value; break;
         }
     }
 
@@ -333,6 +371,12 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
     background-color: #F6F7FB;
     position: relative;
     overflow-y: auto;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
 }
 
 .bg-layer {
@@ -350,10 +394,10 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
     position: relative;
     z-index: 2;
     padding: 0 30rpx;
-    padding-top: calc(var(--status-bar-height) + 20rpx);
-    padding-bottom: 40rpx;
-    padding-bottom: calc(40rpx + constant(safe-area-inset-bottom));
-    padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+    padding-top: calc(var(--status-bar-height) + 16rpx);
+    padding-bottom: 30rpx;
+    padding-bottom: calc(30rpx + constant(safe-area-inset-bottom));
+    padding-bottom: calc(30rpx + env(safe-area-inset-bottom));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -363,13 +407,13 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 40rpx;
-    height: 88rpx;
+    margin-bottom: 30rpx;
+    height: 80rpx;
     position: relative;
 
     .back-btn {
-        width: 70rpx;
-        height: 70rpx;
+        width: 64rpx;
+        height: 64rpx;
         background: rgba(255, 255, 255, 0.25);
         border-radius: 50%;
         display: flex;
@@ -386,7 +430,7 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
         left: 0;
         right: 0;
         text-align: center;
-        font-size: 34rpx;
+        font-size: 32rpx;
         font-weight: 600;
         color: #fff;
         z-index: 1;
@@ -394,10 +438,10 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
     }
 
     .refresh-btn {
-        font-size: 30rpx;
+        font-size: 28rpx;
         font-weight: 600;
         color: #fff;
-        padding: 12rpx 32rpx;
+        padding: 11rpx 28rpx;
         background: rgba(255, 255, 255, 0.25);
         border-radius: 36rpx;
         position: relative;
@@ -413,12 +457,12 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
 .progress-section {
     display: flex;
     justify-content: center;
-    margin-bottom: 60rpx;
+    margin-bottom: 42rpx;
 
     .progress-ring-container {
         position: relative;
-        width: 420rpx;
-        height: 420rpx;
+        width: 370rpx;
+        height: 370rpx;
         background: #fff;
         border-radius: 50%;
         box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.08);
@@ -446,7 +490,7 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
             top: 0;
             left: 50%;
             margin-left: -10rpx;
-            transform-origin: 10rpx 210rpx;
+            transform-origin: 10rpx 185rpx;
 
             &.start {
                 box-shadow: 0 4rpx 10rpx rgba(58, 141, 255, 0.3);
@@ -460,8 +504,8 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
 
         .ring-mask {
             position: absolute;
-            width: 380rpx;
-            height: 380rpx;
+            width: 340rpx;
+            height: 340rpx;
             background: #fff;
             border-radius: 50%;
             z-index: 2;
@@ -553,14 +597,14 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
 
 .action-grid {
     display: flex;
-    margin-bottom: 40rpx;
+    margin-bottom: 30rpx;
 
     .action-card {
         flex: 1;
         min-width: 0;
         background: #fff;
-        border-radius: 36rpx;
-        padding: 40rpx;
+        border-radius: 30rpx;
+        padding: 32rpx;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -568,7 +612,7 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
         transition: transform 0.2s;
 
         & + .action-card {
-            margin-left: 30rpx;
+            margin-left: 26rpx;
         }
 
         &:active {
@@ -576,16 +620,16 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
         }
 
         .icon-box {
-            width: 90rpx;
-            height: 90rpx;
-            border-radius: 28rpx;
+            width: 78rpx;
+            height: 78rpx;
+            border-radius: 24rpx;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 20rpx;
+            margin-bottom: 14rpx;
 
             .iconfont {
-                font-size: 48rpx;
+                font-size: 42rpx;
                 transition: color 0.3s ease;
             }
 
@@ -603,7 +647,7 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
         }
 
         .label {
-            font-size: 28rpx;
+            font-size: 26rpx;
             font-weight: 500;
             color: #333;
         }
@@ -612,8 +656,8 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
 
 .data-card {
     background: #fff;
-    border-radius: 32rpx;
-    padding: 45rpx 0;
+    border-radius: 28rpx;
+    padding: 34rpx 0;
     box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.04);
 
     .data-row {
@@ -677,7 +721,17 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
     }
 }
 
+.detail-list {
+    display: flex;
+    flex-direction: column;
+
+    .data-card:nth-child(1) { order: 1; }
+    .data-card:nth-child(2) { order: 3; }
+    .data-card:nth-child(3) { order: 2; }
+    .data-card:nth-child(4) { order: 4; }
+}
+
 .mt-30 {
-    margin-top: 30rpx;
+    margin-top: 25rpx;
 }
 </style>

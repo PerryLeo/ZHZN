@@ -9,6 +9,11 @@ export const createDeviceState = () => ({
   softLimit: 0,
   feedSpeed: 0,
   motorTorque: 0,
+  moveSpeed: 0,
+  chargingTargetVoltage: 0,
+  chargingCurrentLimit: 0,
+  startMinimumVoltage: 0,
+  autoShutdownTime: 0,
   deviceStatus: '等待设备响应',
   fanStatus: '',
   version: '',
@@ -69,13 +74,18 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
     7: 'softLimit',
     8: 'feedSpeed',
     9: 'motorTorque',
+    a: 'moveSpeed',
+    d: 'chargingTargetVoltage',
+    e: 'chargingCurrentLimit',
+    f: 'startMinimumVoltage',
+    g: 'autoShutdownTime',
   };
-  const valuePattern = /\$(\d+)=(-?\d+)/g;
+  const valuePattern = /\$([0-9ad-g])=(-?\d+(?:\.\d+)?)/g;
   let valueMatch = null;
   while ((valueMatch = valuePattern.exec(text)) !== null) {
-    const key = Number(valueMatch[1]);
-    const value = Number.parseInt(valueMatch[2], 10);
-    if (key === 4) nextState.runMode = modeMap[value] || '未知';
+    const key = valueMatch[1];
+    const value = Number(valueMatch[2]);
+    if (key === '4') nextState.runMode = modeMap[value] || '未知';
     else if (fieldMap[key]) nextState[fieldMap[key]] = value;
   }
 

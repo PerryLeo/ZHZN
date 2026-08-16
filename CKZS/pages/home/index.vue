@@ -10,20 +10,20 @@
             <view class="refresh-btn" @click="handleManualRefresh">刷新</view>
           </view>
         </view>
-        <text class="page-subtitle">当前可连接 {{ connectableCount }} 台设备</text>
+        <text class="page-subtitle">我的设备共 {{ formatSummaryValue(deviceSummary.total) }} 台</text>
       </view>
       <view class="summary-board">
         <view class="summary-item">
-          <text class="num">{{ devices.length }}</text>
-          <text class="label">设备总数</text>
+          <text class="num">{{ formatSummaryValue(deviceSummary.total) }}</text>
+          <text class="label">已绑定</text>
         </view>
         <view class="summary-item border-line">
-          <text class="num highlight">{{ connectableCount }}</text>
-          <text class="label">可连接</text>
+          <text class="num highlight">{{ formatSummaryValue(deviceSummary.online) }}</text>
+          <text class="label">在线</text>
         </view>
         <view class="summary-item">
-          <text class="num warning">{{ abnormalCount }}</text>
-          <text class="label">异常</text>
+          <text class="num warning">{{ formatSummaryValue(deviceSummary.offline) }}</text>
+          <text class="label">离线</text>
         </view>
       </view>
     </view>
@@ -102,12 +102,11 @@
               </view>
               <view class="bound-info">
                 <text class="bound-name">{{ item.deviceName || item.deviceCode }}</text>
-                <text class="bound-code">{{ item.deviceCode }}</text>
               </view>
               <view class="bound-metrics">
                 <view class="bound-metric">
-                  <text class="metric-label">电压</text>
-                  <text :class="['metric-value', getMetricValueClass(item.voltage, 'voltage')]">{{ formatMetric(item.voltage, 'V') }}</text>
+                  <text class="metric-label">电量</text>
+                  <text class="metric-value">{{ formatMetric(item.battery, '') }}</text>
                 </view>
                 <view class="metric-divider"></view>
                 <view class="bound-metric">
@@ -116,8 +115,8 @@
                 </view>
               </view>
               <view class="mode-row">
-                <text class="mode-label">运行模式</text>
-                <text class="mode-value">{{ item.runMode }}</text>
+                <text class="mode-label">当前状态</text>
+                <text class="mode-value">{{ item.deviceStatus }}</text>
               </view>
             </view>
           </view>
@@ -309,6 +308,8 @@ const boundPage = ref(1);
 const boundTotal = ref(0);
 const allBoundTotal = ref(0);
 const boundTotalPages = ref(0);
+const createEmptyDeviceSummary = () => ({ total: null, online: null, offline: null });
+const deviceSummary = ref(createEmptyDeviceSummary());
 const deviceGroups = ref([]);
 const groupLoading = ref(false);
 const selectedGroupId = ref('all');
@@ -359,6 +360,21 @@ const fetchDeviceGroups = async () => {
     groupLoading.value = false;
   }
 };
+
+const fetchDeviceSummary = async () => {
+  try {
+    const result = await http.get('/api/users/devices/summary');
+    deviceSummary.value = {
+      total: Number(result?.total) || 0,
+      online: Number(result?.online) || 0,
+      offline: Number(result?.offline) || 0
+    };
+  } catch (error) {
+    deviceSummary.value = createEmptyDeviceSummary();
+  }
+};
+
+const formatSummaryValue = (value) => Number.isFinite(value) ? String(value) : '--';
 
 const fetchGroupCandidateDevices = async () => {
   groupCandidateLoading.value = true;
@@ -468,19 +484,25 @@ const findMetricValue = (rawData, names) => {
   return match ? Number(match[1]) : null;
 };
 
-const parseRunMode = (rawData) => {
-  const match = String(rawData || '').match(/(?:^|\r?\n)\$4=(-?\d+)/);
+const parseDeviceStatus = (rawData) => {
+  const match = String(rawData || '').match(/<([^>|\r\n]+)/);
   if (!match) return '--';
-  const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
-  return modeMap[Number(match[1])] || '未知';
+  const statusMap = {
+    Unreturn: '未归位',
+    Pause: '暂停',
+    Idle: '空闲',
+    Waiting: '等待中',
+    running: '运行中'
+  };
+  return statusMap[match[1]] || match[1];
 };
 
 const parseDeviceMetrics = (result) => {
   const rawData = typeof result?.data === 'string' ? result.data : '';
   return {
-    voltage: result?.voltage ?? findMetricValue(rawData, ['Voltage', 'Volt', '电压']),
+    battery: null,
     current: result?.current ?? findMetricValue(rawData, ['Current', 'Curr', '电流']),
-    runMode: parseRunMode(rawData),
+    deviceStatus: parseDeviceStatus(rawData),
     rawData,
     timestamp: result?.timestamp || ''
   };
@@ -511,9 +533,9 @@ const fetchBoundDeviceStatuses = async (devices) => {
       }
       device.online = 1;
       const metrics = parseDeviceMetrics(status);
-      device.voltage = metrics.voltage;
+      device.battery = metrics.battery;
       device.current = metrics.current;
-      device.runMode = metrics.runMode;
+      device.deviceStatus = metrics.deviceStatus;
       device.rawStatusData = metrics.rawData;
       device.statusTimestamp = metrics.timestamp;
     });
@@ -564,7 +586,7 @@ const handleDeviceSwitch = async (device) => {
 
 const formatMetric = (value, unit) => {
   if (value === null || value === undefined || value === '') return '--';
-  return `${value} ${unit}`;
+  return unit ? `${value} ${unit}` : String(value);
 };
 
 const getMetricValueClass = (value, type) => {
@@ -599,9 +621,9 @@ const fetchBoundDevices = async () => {
     boundDevices.value = (Array.isArray(result?.list) ? result.list : []).map(device => ({
       ...device,
       online: 0,
-      voltage: null,
+      battery: null,
       current: null,
-      runMode: '--',
+      deviceStatus: '--',
       statusLoading: false,
       statusError: '',
       rawStatusData: '',
@@ -609,12 +631,13 @@ const fetchBoundDevices = async () => {
       switchOn: null,
       switchLoading: false
     }));
-    // 卡片先显示，再通过单个批量接口查询当前页 10 台设备的实时状态。
-    fetchBoundDeviceStatuses(boundDevices.value);
+    // 卡片先显示，再异步查询当前页设备的实时状态；查询结果会同步回顶部汇总。
+    fetchBoundDeviceStatuses(boundDevices.value).finally(fetchDeviceSummary);
   } catch (e) {
     boundDevices.value = [];
     boundTotal.value = 0;
     boundTotalPages.value = 0;
+    deviceSummary.value = createEmptyDeviceSummary();
   } finally {
     boundLoading.value = false;
   }
@@ -691,7 +714,6 @@ const loadSavedDevices = () => {
 };
 
 const connectableCount = computed(() => devices.value.filter(d => d.canConnect).length);
-const abnormalCount = computed(() => devices.value.filter(d => d.isAbnormal).length);
 
 const startSilentScan = () => {
   if (isRequestingBluetoothPermission) return;
@@ -802,6 +824,7 @@ onMounted(() => {
 
 onShow(() => {
   fetchBoundDevices();
+  fetchDeviceSummary();
   fetchDeviceGroups();
   loadSavedDevices();
   // 关闭旧连接，释放设备让其恢复广播
@@ -898,7 +921,7 @@ const handleManualRefresh = () => {
     // 关闭旧连接，释放设备让其恢复广播
     try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) { }
     startSilentScan();
-    await Promise.allSettled([fetchBoundDevices(), fetchDeviceGroups()]);
+    await Promise.allSettled([fetchBoundDevices(), fetchDeviceSummary(), fetchDeviceGroups()]);
     uni.hideLoading();
     uni.showToast({ title: '重置成功', icon: 'success' });
   }, 500);
@@ -1452,17 +1475,6 @@ const toBoundDevice = (item) => {
   color: #2D3139;
   display: block;
   line-height: 38rpx;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bound-code {
-  margin-top: 2rpx;
-  font-size: 19rpx;
-  line-height: 28rpx;
-  color: #9CA3AF;
-  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

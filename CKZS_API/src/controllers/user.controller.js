@@ -128,6 +128,24 @@ export const UserController = {
   },
 
   // ==================== 我的设备列表 ====================
+  async myDeviceSummary(req, res) {
+    try {
+      const where = { userId: req.user.id, status: 1 };
+      const [total, online] = await Promise.all([
+        Device.count({ where }),
+        Device.count({ where: { ...where, online: 1 } }),
+      ]);
+
+      return success(res, {
+        total,
+        online,
+        offline: total - online,
+      });
+    } catch (err) {
+      return fail(res, err.message || '设备汇总获取失败');
+    }
+  },
+
   async myDevices(req, res) {
     try {
       const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);

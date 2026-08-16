@@ -186,6 +186,11 @@ const parameterForm = reactive({
   softLimit: 0,
   feedSpeed: 0,
   motorTorque: 0,
+  moveSpeed: 0,
+  chargingTargetVoltage: 0,
+  chargingCurrentLimit: 0,
+  startMinimumVoltage: 0,
+  autoShutdownTime: 0,
   runMode: '0',
 });
 
@@ -203,6 +208,11 @@ const parameterFields = [
   { key: 'softLimit', label: '距离软限位', unit: '米', command: '$7=', min: 0, step: 0.1, scale: 10 },
   { key: 'feedSpeed', label: '送料电机转速', unit: '圈/秒', command: '$8=', min: 0, step: 0.1, scale: 10 },
   { key: 'motorTorque', label: '送料电机扭矩', unit: '%', command: '$9=', min: 0, max: 100, step: 1 },
+  { key: 'moveSpeed', label: '移动速度', unit: '%', command: '$a=', min: 50, max: 100, step: 1 },
+  { key: 'chargingTargetVoltage', label: '充电目标电压', unit: '', command: '$d=', step: 1 },
+  { key: 'chargingCurrentLimit', label: '充电电流限制', unit: '', command: '$e=', step: 1 },
+  { key: 'startMinimumVoltage', label: '启动最低电压', unit: '', command: '$f=', step: 1 },
+  { key: 'autoShutdownTime', label: '自动关机时间', unit: '', command: '$g=', step: 1 },
 ];
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
@@ -214,10 +224,14 @@ const metrics = computed(() => [
   { label: '远端等待时间', value: deviceState.farWaitTime, unit: 's' },
   { label: '手动模式趟数', value: deviceState.manualTripsVal, unit: '趟' },
   { label: '喂食超时时间', value: deviceState.feedTimeout, unit: 's' },
-  { label: '喂食时间', value: deviceState.feedTime, unit: 's' },
   { label: '距离软限位', value: deviceState.softLimit > 0 ? deviceState.softLimit / 10 : '关闭', unit: deviceState.softLimit > 0 ? '米' : '' },
   { label: '送料电机转速', value: deviceState.feedSpeed / 10, unit: '圈/秒' },
   { label: '送料电机扭矩', value: deviceState.motorTorque, unit: '%' },
+  { label: '移动速度', value: deviceState.moveSpeed, unit: '%' },
+  { label: '充电目标电压', value: deviceState.chargingTargetVoltage, unit: '' },
+  { label: '充电电流限制', value: deviceState.chargingCurrentLimit, unit: '' },
+  { label: '启动最低电压', value: deviceState.startMinimumVoltage, unit: '' },
+  { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: '' },
 ]);
 
 const applyStateToForm = () => {
@@ -229,6 +243,11 @@ const applyStateToForm = () => {
     softLimit: deviceState.softLimit / 10,
     feedSpeed: deviceState.feedSpeed / 10,
     motorTorque: deviceState.motorTorque,
+    moveSpeed: deviceState.moveSpeed,
+    chargingTargetVoltage: deviceState.chargingTargetVoltage,
+    chargingCurrentLimit: deviceState.chargingCurrentLimit,
+    startMinimumVoltage: deviceState.startMinimumVoltage,
+    autoShutdownTime: deviceState.autoShutdownTime,
     runMode: deviceState.runMode === '手动' ? '1' : '0',
   });
 };
