@@ -33,7 +33,13 @@
         <!-- ====== 已绑定设备 ====== -->
         <view class="section device-section">
           <view class="section-header">
-            <text class="section-title">我的设备</text>
+            <view class="section-title-wrap">
+              <text class="section-title">我的设备</text>
+              <view class="device-checking-hint" v-if="isBoundStatusChecking">
+                <view class="device-checking-spinner"></view>
+                <text>正在检测设备状态</text>
+              </view>
+            </view>
             <view class="section-actions">
               <view class="group-select" :class="{ open: groupDropdownVisible }" @click.stop="toggleGroupDropdown">
                 <text class="group-select-text">{{ selectedGroupName }}</text>
@@ -70,11 +76,11 @@
           <view class="group-dropdown-mask" v-if="groupDropdownVisible" @click="groupDropdownVisible = false"></view>
           <text class="loading-text" v-if="boundLoading">加载中...</text>
           <view class="batch-row" v-if="!boundLoading && filteredBoundDevices.length > 0">
-            <view class="batch-btn" @click="turnAllOn">
-              <text class="batch-btn-text">全部开启</text>
+            <view class="batch-btn" :class="{ disabled: batchCommandLoading || isBoundStatusChecking }" @click="turnAllOn">
+              <text class="batch-btn-text">{{ batchCommandLoading ? '执行中...' : '全部开始' }}</text>
             </view>
-            <view class="batch-btn batch-btn-off" @click="turnAllOff">
-              <text class="batch-btn-text">全部关闭</text>
+            <view class="batch-btn batch-btn-off" :class="{ disabled: batchCommandLoading || isBoundStatusChecking }" @click="turnAllOff">
+              <text class="batch-btn-text">{{ batchCommandLoading ? '执行中...' : '全部暂停' }}</text>
             </view>
           </view>
           <view class="bound-grid" v-if="!boundLoading && filteredBoundDevices.length > 0">
@@ -85,9 +91,9 @@
               @click="toBoundDevice(item)"
             >
               <view class="bound-head">
-                <view class="bound-icon" :class="{ online: item.online === 1 }">
+                <view class="bound-icon" :class="{ online: item.online === 1, checking: item.statusLoading }">
                   <text class="iconfont icon-online bound-device-icon"></text>
-                  <view class="connection-dot" :class="{ online: item.online === 1 }"></view>
+                  <view class="connection-dot" :class="{ online: item.online === 1, checking: item.statusLoading }"></view>
                 </view>
                 <view
                   class="device-switch"
@@ -106,7 +112,7 @@
               <view class="bound-metrics">
                 <view class="bound-metric">
                   <text class="metric-label">电量</text>
-                  <text class="metric-value">{{ formatMetric(item.battery, '') }}</text>
+                  <text class="metric-value">{{ formatBatteryLevel(item.battery) }}</text>
                 </view>
                 <view class="metric-divider"></view>
                 <view class="bound-metric">
@@ -115,8 +121,8 @@
                 </view>
               </view>
               <view class="mode-row">
-                <text class="mode-label">当前状态</text>
-                <text class="mode-value">{{ item.deviceStatus }}</text>
+                <text class="mode-label">停止原因</text>
+                <text class="mode-value">{{ item.stopReason }}</text>
               </view>
             </view>
           </view>
@@ -304,6 +310,7 @@ import http from '@/common/request.js';
 const DEVICE_PAGE_SIZE = 10;
 const boundDevices = ref([]);
 const boundLoading = ref(false);
+const batchCommandLoading = ref(false);
 const boundPage = ref(1);
 const boundTotal = ref(0);
 const allBoundTotal = ref(0);
@@ -332,6 +339,8 @@ const filteredBoundDevices = computed(() => {
   return boundDevices.value;
 });
 
+const isBoundStatusChecking = computed(() => boundDevices.value.some(device => device.statusLoading));
+
 const toggleGroupDropdown = () => {
   groupDropdownVisible.value = !groupDropdownVisible.value;
 };
@@ -343,7 +352,7 @@ const selectDeviceGroup = async (groupId) => {
   await fetchBoundDevices();
 };
 
-const fetchDeviceGroups = async () => {
+const fetchDeviceGroups = async (throwOnError = false) => {
   groupLoading.value = true;
   try {
     const list = await http.get('/api/device-groups');
@@ -356,12 +365,13 @@ const fetchDeviceGroups = async () => {
     }
   } catch (error) {
     deviceGroups.value = [];
+    if (throwOnError) throw error;
   } finally {
     groupLoading.value = false;
   }
 };
 
-const fetchDeviceSummary = async () => {
+const fetchDeviceSummary = async (throwOnError = false) => {
   try {
     const result = await http.get('/api/users/devices/summary');
     deviceSummary.value = {
@@ -371,6 +381,7 @@ const fetchDeviceSummary = async () => {
     };
   } catch (error) {
     deviceSummary.value = createEmptyDeviceSummary();
+    if (throwOnError) throw error;
   }
 };
 
@@ -484,25 +495,21 @@ const findMetricValue = (rawData, names) => {
   return match ? Number(match[1]) : null;
 };
 
-const parseDeviceStatus = (rawData) => {
-  const match = String(rawData || '').match(/<([^>|\r\n]+)/);
-  if (!match) return '--';
-  const statusMap = {
-    Unreturn: '未归位',
-    Pause: '暂停',
-    Idle: '空闲',
-    Waiting: '等待中',
-    running: '运行中'
-  };
-  return statusMap[match[1]] || match[1];
-};
-
 const parseDeviceMetrics = (result) => {
   const rawData = typeof result?.data === 'string' ? result.data : '';
+  const reasonMap = {
+    0: '无',
+    1: '满',
+    2: '过流',
+    3: '拔出',
+    4: '过压',
+    5: '欠流'
+  };
+  const reason = findMetricValue(rawData, ['Reason']);
   return {
-    battery: null,
-    current: result?.current ?? findMetricValue(rawData, ['Current', 'Curr', '电流']),
-    deviceStatus: parseDeviceStatus(rawData),
+    battery: findMetricValue(rawData, ['BatLevel']),
+    current: findMetricValue(rawData, ['I_Chg']),
+    stopReason: reason === null ? '--' : (reasonMap[reason] || `未知(${reason})`),
     rawData,
     timestamp: result?.timestamp || ''
   };
@@ -535,7 +542,7 @@ const fetchBoundDeviceStatuses = async (devices) => {
       const metrics = parseDeviceMetrics(status);
       device.battery = metrics.battery;
       device.current = metrics.current;
-      device.deviceStatus = metrics.deviceStatus;
+      device.stopReason = metrics.stopReason;
       device.rawStatusData = metrics.rawData;
       device.statusTimestamp = metrics.timestamp;
     });
@@ -589,6 +596,11 @@ const formatMetric = (value, unit) => {
   return unit ? `${value} ${unit}` : String(value);
 };
 
+const formatBatteryLevel = (value) => {
+  if (value === null || value === undefined || value === '') return '--';
+  return `${value}%`;
+};
+
 const getMetricValueClass = (value, type) => {
   if (value === null || value === undefined || value === '') return '';
 
@@ -605,7 +617,7 @@ const getMetricValueClass = (value, type) => {
   return 'metric-value-success';
 };
 
-const fetchBoundDevices = async () => {
+const fetchBoundDevices = async ({ throwOnError = false, refreshSummaryAfterStatus = true } = {}) => {
   boundLoading.value = true;
   try {
     const params = {
@@ -623,7 +635,7 @@ const fetchBoundDevices = async () => {
       online: 0,
       battery: null,
       current: null,
-      deviceStatus: '--',
+      stopReason: '--',
       statusLoading: false,
       statusError: '',
       rawStatusData: '',
@@ -632,12 +644,17 @@ const fetchBoundDevices = async () => {
       switchLoading: false
     }));
     // 卡片先显示，再异步查询当前页设备的实时状态；查询结果会同步回顶部汇总。
-    fetchBoundDeviceStatuses(boundDevices.value).finally(fetchDeviceSummary);
+    if (refreshSummaryAfterStatus) {
+      fetchBoundDeviceStatuses(boundDevices.value).finally(fetchDeviceSummary);
+    } else {
+      fetchBoundDeviceStatuses(boundDevices.value);
+    }
   } catch (e) {
     boundDevices.value = [];
     boundTotal.value = 0;
     boundTotalPages.value = 0;
-    deviceSummary.value = createEmptyDeviceSummary();
+    if (!throwOnError) deviceSummary.value = createEmptyDeviceSummary();
+    if (throwOnError) throw e;
   } finally {
     boundLoading.value = false;
   }
@@ -921,19 +938,75 @@ const handleManualRefresh = () => {
     // 关闭旧连接，释放设备让其恢复广播
     try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) { }
     startSilentScan();
-    await Promise.allSettled([fetchBoundDevices(), fetchDeviceSummary(), fetchDeviceGroups()]);
+    const results = await Promise.allSettled([
+      fetchBoundDevices({ throwOnError: true, refreshSummaryAfterStatus: false }),
+      fetchDeviceSummary(true),
+      fetchDeviceGroups(true),
+    ]);
+    const failedNames = ['设备列表', '设备统计', '设备分组'].filter((name, index) => results[index].status === 'rejected');
+
     uni.hideLoading();
-    uni.showToast({ title: '重置成功', icon: 'success' });
+    if (failedNames.length === 0) {
+      uni.showToast({ title: '刷新成功', icon: 'success' });
+      return;
+    }
+    uni.showToast({ title: `${failedNames.join('、')}刷新失败`, icon: 'none' });
   }, 500);
 };
 
-const turnAllOn = () => {
-  // TODO
+const fetchAllSelectedBoundDeviceCodes = async () => {
+  const baseParams = { page: 1, pageSize: 100 };
+  if (selectedGroupId.value !== 'all') baseParams.groupId = selectedGroupId.value;
+
+  const firstPage = await http.get('/api/users/devices', baseParams);
+  const devices = Array.isArray(firstPage?.list) ? [...firstPage.list] : [];
+  const totalPages = Number(firstPage?.totalPages) || 0;
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const result = await http.get('/api/users/devices', { ...baseParams, page });
+    if (Array.isArray(result?.list)) devices.push(...result.list);
+  }
+
+  return [...new Set(devices.map(device => String(device?.deviceCode || '').trim()).filter(Boolean))];
 };
 
-const turnAllOff = () => {
-  // TODO
+const sendBatchDeviceCommand = async (command, actionLabel) => {
+  if (batchCommandLoading.value) return;
+  if (isBoundStatusChecking.value) {
+    uni.showToast({ title: '正在检测设备状态，请稍后操作', icon: 'none' });
+    return;
+  }
+
+  batchCommandLoading.value = true;
+  uni.showLoading({ title: `正在全部${actionLabel}...`, mask: true });
+  try {
+    const deviceCodes = await fetchAllSelectedBoundDeviceCodes();
+    if (deviceCodes.length === 0) {
+      uni.showToast({ title: '暂无可操作设备', icon: 'none' });
+      return;
+    }
+    await http.post('/api/devices/batchCommand', {
+      deviceCodes,
+      type: 'send',
+      // 批量透传按协议原样下发，不附加换行符。
+      params: { data: command }
+    });
+    uni.hideLoading();
+    uni.showToast({ title: '下发成功', icon: 'success' });
+  } catch (error) {
+    uni.showToast({
+      title: typeof error === 'string' ? error : `全部${actionLabel}失败`,
+      icon: 'none'
+    });
+  } finally {
+    batchCommandLoading.value = false;
+    uni.hideLoading();
+  }
 };
+
+const turnAllOn = () => sendBatchDeviceCommand('$B', '开始');
+
+const turnAllOff = () => sendBatchDeviceCommand('$C', '暂停');
 
 const toBoundDevice = (item) => {
   if (!item?.deviceCode) {
@@ -1247,6 +1320,11 @@ const toBoundDevice = (item) => {
   }
 
   &:active { opacity: 0.85; transform: scale(0.98); }
+
+  &.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
 }
 
 .section-title {
@@ -1379,6 +1457,31 @@ const toBoundDevice = (item) => {
   }
 }
 
+.section-title-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.device-checking-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-left: 12rpx;
+  color: #6E8DF4;
+  font-size: 20rpx;
+  white-space: nowrap;
+}
+
+.device-checking-spinner {
+  width: 16rpx;
+  height: 16rpx;
+  border: 2rpx solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: online-status-spin .8s linear infinite;
+}
+
 .bound-head {
   display: flex;
   align-items: center;
@@ -1408,6 +1511,14 @@ const toBoundDevice = (item) => {
       color: $primary-color;
     }
   }
+
+  &.checking {
+    background: #EEF2FF;
+
+    .iconfont {
+      color: #6E8DF4;
+    }
+  }
 }
 
 .connection-dot {
@@ -1423,6 +1534,11 @@ const toBoundDevice = (item) => {
 
   &.online {
     background: #52C41A;
+  }
+
+  &.checking {
+    background: #6E8DF4;
+    animation: online-status-pulse 1s ease-in-out infinite;
   }
 }
 
@@ -1478,6 +1594,19 @@ const toBoundDevice = (item) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@keyframes online-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes online-status-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
 }
 
 .bound-metrics {

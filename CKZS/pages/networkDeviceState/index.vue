@@ -86,19 +86,19 @@
                 <view class="data-card mt-30">
                     <view class="data-row">
                         <view class="data-item border-line">
-                            <view class="val-box"><text class="val">{{ state.chargingTargetVoltage }}</text></view>
+                            <view class="val-box"><text class="val">{{ state.chargingTargetVoltage / 100 }}</text><text class="unit">V</text></view>
                             <text class="lab">充电目标电压</text>
                         </view>
                         <view class="data-item border-line">
-                            <view class="val-box"><text class="val">{{ state.chargingCurrentLimit }}</text></view>
+                            <view class="val-box"><text class="val">{{ state.chargingCurrentLimit / 1000 }}</text><text class="unit">A</text></view>
                             <text class="lab">充电电流限制</text>
                         </view>
                         <view class="data-item border-line">
-                            <view class="val-box"><text class="val">{{ state.startMinimumVoltage }}</text></view>
+                            <view class="val-box"><text class="val">{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view>
                             <text class="lab">启动最低电压</text>
                         </view>
                         <view class="data-item">
-                            <view class="val-box"><text class="val">{{ state.autoShutdownTime }}</text></view>
+                            <view class="val-box"><text class="val">{{ state.autoShutdownTime }}</text><text class="unit">s</text></view>
                             <text class="lab">自动关机时间</text>
                         </view>
                     </view>
@@ -158,6 +158,13 @@
                             </view>
                             <text class="lab">风扇</text>
                         </view>
+                        <view class="data-item">
+                            <view class="val-box">
+                                <text class="val" :class="{ 'highlight': state.pumpStatus === 'ON' }">{{ state.pumpStatus
+                                    === 'ON' ? '开启' : '关闭' }}</text>
+                            </view>
+                            <text class="lab">撒药</text>
+                        </view>
                     </view>
                 </view>
             </view>
@@ -188,6 +195,7 @@ const state = reactive({
     autoShutdownTime: 0,
     deviceStatus: '',
     fanStatus: '',
+    pumpStatus: '',
     version: '',
     deviceTime: '00:00:00',
     deviceCode: '',
@@ -253,6 +261,23 @@ const extractResponseText = (payload) => {
     return String(payload);
 };
 
+const formatDeviceStatus = (status) => {
+    const value = String(status || '').trim();
+    const waitingMatch = value.match(/^Waiting:\s*(\d+)\s*s?$/i);
+    if (waitingMatch) return `等待中，剩余${waitingMatch[1]}秒`;
+
+    const runningMatch = value.match(/^Running:\s*(B-A|A-B)(?:\s|$)/i);
+    if (runningMatch) return runningMatch[1].toUpperCase() === 'B-A' ? '正在从B往A运动' : '正在从A往B运动';
+
+    const statusMap = {
+        Unreturn: '刚上电，未归位',
+        Pause: '暂停',
+        Idle: '空闲',
+        running: '运行中'
+    };
+    return statusMap[value] || value || '未知';
+};
+
 const parseDeviceResponse = (payload) => {
     const text = extractResponseText(payload);
     if (!text) return;
@@ -260,16 +285,10 @@ const parseDeviceResponse = (payload) => {
     const statusMatch = text.match(/<([^>]+)>/);
     if (statusMatch) {
         const parts = statusMatch[1].split('|');
-        const statusMap = {
-            Unreturn: '未归位',
-            Pause: '暂停',
-            Idle: '空闲',
-            Waiting: '等待中',
-            running: '运行中'
-        };
-        state.deviceStatus = statusMap[parts[0]] || parts[0];
+        state.deviceStatus = formatDeviceStatus(parts[0]);
         parts.forEach((part) => {
             if (part.includes('Fan:')) state.fanStatus = part.split(':')[1];
+            if (part.includes('Pump:')) state.pumpStatus = part.split(':')[1];
             if (part.includes('Times:')) state.currentTrip = parseInt(part.split(':')[1]) || 0;
         });
     }

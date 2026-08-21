@@ -20,7 +20,7 @@
             <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>
             <span class="tag" :class="isBound ? 'success' : 'neutral'">{{ isBound ? '已绑定' : '未绑定' }}</span>
           </div>
-          <p>{{ device.deviceCode }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}</p>
+          <p>{{ device.deviceCode }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}<template v-if="deviceState.version"> · 固件 {{ deviceState.version }}</template></p>
         </div>
         <div class="detail-hero-actions">
           <button class="secondary-btn" type="button" :disabled="commandBusy || !isBound" @click="syncClock">同步时间</button>
@@ -52,7 +52,7 @@
             <div><span>设备时间</span><strong>{{ deviceState.deviceTime }}</strong></div>
             <div><span>运行模式</span><strong>{{ deviceState.runMode }}</strong></div>
             <div><span>风机状态</span><strong>{{ fanLabel }}</strong></div>
-            <div><span>固件版本</span><strong>{{ deviceState.version || '--' }}</strong></div>
+            <div><span>撒药状态</span><strong>{{ pumpLabel }}</strong></div>
           </div>
         </section>
 
@@ -209,14 +209,15 @@ const parameterFields = [
   { key: 'feedSpeed', label: '送料电机转速', unit: '圈/秒', command: '$8=', min: 0, step: 0.1, scale: 10 },
   { key: 'motorTorque', label: '送料电机扭矩', unit: '%', command: '$9=', min: 0, max: 100, step: 1 },
   { key: 'moveSpeed', label: '移动速度', unit: '%', command: '$a=', min: 50, max: 100, step: 1 },
-  { key: 'chargingTargetVoltage', label: '充电目标电压', unit: '', command: '$d=', step: 1 },
-  { key: 'chargingCurrentLimit', label: '充电电流限制', unit: '', command: '$e=', step: 1 },
-  { key: 'startMinimumVoltage', label: '启动最低电压', unit: '', command: '$f=', step: 1 },
-  { key: 'autoShutdownTime', label: '自动关机时间', unit: '', command: '$g=', step: 1 },
+  { key: 'chargingTargetVoltage', label: '充电目标电压', unit: 'V', command: '$d=', step: 0.01, scale: 100 },
+  { key: 'chargingCurrentLimit', label: '充电电流限制', unit: 'A', command: '$e=', step: 0.001, scale: 1000 },
+  { key: 'startMinimumVoltage', label: '启动最低电压', unit: 'V', command: '$f=', step: 0.01, scale: 100 },
+  { key: 'autoShutdownTime', label: '自动关机时间', unit: 's', command: '$g=', step: 1 },
 ];
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
 const fanLabel = computed(() => deviceState.fanStatus === 'ON' ? '开启' : deviceState.fanStatus === 'OFF' ? '关闭' : '--');
+const pumpLabel = computed(() => deviceState.pumpStatus === 'ON' ? '开启' : deviceState.pumpStatus === 'OFF' ? '关闭' : '--');
 const progress = computed(() => deviceState.manualTripsVal > 0 ? Math.min((deviceState.currentTrip / deviceState.manualTripsVal) * 100, 100) : 0);
 const ringStyle = computed(() => ({ background: `conic-gradient(#3157e5 ${progress.value}%, #e9edfa ${progress.value}% 100%)` }));
 const metrics = computed(() => [
@@ -228,10 +229,10 @@ const metrics = computed(() => [
   { label: '送料电机转速', value: deviceState.feedSpeed / 10, unit: '圈/秒' },
   { label: '送料电机扭矩', value: deviceState.motorTorque, unit: '%' },
   { label: '移动速度', value: deviceState.moveSpeed, unit: '%' },
-  { label: '充电目标电压', value: deviceState.chargingTargetVoltage, unit: '' },
-  { label: '充电电流限制', value: deviceState.chargingCurrentLimit, unit: '' },
-  { label: '启动最低电压', value: deviceState.startMinimumVoltage, unit: '' },
-  { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: '' },
+  { label: '充电目标电压', value: deviceState.chargingTargetVoltage / 100, unit: 'V' },
+  { label: '充电电流限制', value: deviceState.chargingCurrentLimit / 1000, unit: 'A' },
+  { label: '启动最低电压', value: deviceState.startMinimumVoltage / 100, unit: 'V' },
+  { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: 's' },
 ]);
 
 const applyStateToForm = () => {
@@ -244,9 +245,9 @@ const applyStateToForm = () => {
     feedSpeed: deviceState.feedSpeed / 10,
     motorTorque: deviceState.motorTorque,
     moveSpeed: deviceState.moveSpeed,
-    chargingTargetVoltage: deviceState.chargingTargetVoltage,
-    chargingCurrentLimit: deviceState.chargingCurrentLimit,
-    startMinimumVoltage: deviceState.startMinimumVoltage,
+    chargingTargetVoltage: deviceState.chargingTargetVoltage / 100,
+    chargingCurrentLimit: deviceState.chargingCurrentLimit / 1000,
+    startMinimumVoltage: deviceState.startMinimumVoltage / 100,
     autoShutdownTime: deviceState.autoShutdownTime,
     runMode: deviceState.runMode === '手动' ? '1' : '0',
   });
@@ -256,20 +257,12 @@ const loadDevice = async () => {
   loading.value = true;
   try {
     const deviceCode = String(route.params.deviceCode || '');
-    const cacheKey = `CKZS_ADMIN_DEVICE_${deviceCode}`;
-    const cached = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
-
-    if (cached?.deviceCode === deviceCode) {
-      device.value = cached;
-    } else {
-      const pageData = await api.get('/api/admin/devices', {
-        page: 1,
-        pageSize: 100,
-        keyword: deviceCode,
-      });
-      device.value = pageData.list.find(item => item.deviceCode === deviceCode) || null;
-      if (device.value) sessionStorage.setItem(cacheKey, JSON.stringify(device.value));
-    }
+    const pageData = await api.get('/api/admin/devices', {
+      page: 1,
+      pageSize: 100,
+      keyword: deviceCode,
+    });
+    device.value = pageData.list.find(item => item.deviceCode === deviceCode) || null;
 
     if (!device.value) throw new Error('未找到该设备');
     editableName.value = device.value.deviceName || device.value.deviceCode;

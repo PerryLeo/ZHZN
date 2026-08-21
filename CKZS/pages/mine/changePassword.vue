@@ -39,7 +39,7 @@
 <script setup>
 import { ref } from 'vue';
 import http from '@/common/request.js';
-import { TOKEN_KEY, USER_KEY } from '@/common/config.js';
+import { TOKEN_KEY, USER_KEY, SAVED_PASSWORD } from '@/common/config.js';
 
 const oldPwd = ref('');
 const newPwd = ref('');
@@ -63,6 +63,7 @@ const handleSubmit = async () => {
       oldPassword: oldPwd.value,
       newPassword: newPwd.value,
     });
+    uni.setStorageSync(SAVED_PASSWORD, newPwd.value);
     uni.showToast({ title: '修改成功', icon: 'success' });
     uni.removeStorageSync(TOKEN_KEY);
     uni.removeStorageSync(USER_KEY);

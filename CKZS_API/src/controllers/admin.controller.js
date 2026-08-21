@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
-import { Device, User, DeviceGroupMember } from '../models/index.js';
+import { Device, User, DeviceGroup, DeviceGroupMember } from '../models/index.js';
 import { fail, paginate, success } from '../utils/response.js';
 
 const getPagination = (query) => {
@@ -113,6 +113,21 @@ export const AdminController = {
       const { page, pageSize, offset } = getPagination(req.query);
       const keyword = String(req.query.keyword || '').trim();
       const where = {};
+      const groupId = Number.parseInt(req.query.groupId, 10);
+
+      if (Number.isInteger(groupId) && groupId > 0) {
+        const group = await DeviceGroup.findOne({
+          where: { id: groupId, userId: req.user.id },
+          attributes: ['id'],
+        });
+        if (!group) return fail(res, '设备分组不存在或不属于当前管理员', 404);
+
+        const members = await DeviceGroupMember.findAll({
+          where: { groupId },
+          attributes: ['deviceId'],
+        });
+        where.id = { [Op.in]: members.map(member => member.deviceId) };
+      }
 
       if (keyword) {
         where[Op.or] = [

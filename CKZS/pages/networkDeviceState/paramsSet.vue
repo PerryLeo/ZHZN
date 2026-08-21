@@ -93,19 +93,19 @@
                 <view class="settings-group">
                     <view class="setting-item">
                         <text class="label">充电目标电压</text>
-                        <view class="right-box"><input class="item-input" v-model="chargingTargetVoltage" type="number" @blur="handleDataBlur('$d=', chargingTargetVoltage)" /></view>
+                        <view class="right-box"><input class="item-input" v-model="chargingTargetVoltage" type="number" @blur="handleDataBlur('$d=', chargingTargetVoltage * 100)" /><text class="unit">V</text></view>
                     </view>
                     <view class="setting-item">
                         <text class="label">充电电流限制</text>
-                        <view class="right-box"><input class="item-input" v-model="chargingCurrentLimit" type="number" @blur="handleDataBlur('$e=', chargingCurrentLimit)" /></view>
+                        <view class="right-box"><input class="item-input" v-model="chargingCurrentLimit" type="number" @blur="handleDataBlur('$e=', chargingCurrentLimit * 1000)" /><text class="unit">A</text></view>
                     </view>
                     <view class="setting-item">
                         <text class="label">启动最低电压</text>
-                        <view class="right-box"><input class="item-input" v-model="startMinimumVoltage" type="number" @blur="handleDataBlur('$f=', startMinimumVoltage)" /></view>
+                        <view class="right-box"><input class="item-input" v-model="startMinimumVoltage" type="number" @blur="handleDataBlur('$f=', startMinimumVoltage * 100)" /><text class="unit">V</text></view>
                     </view>
                     <view class="setting-item">
                         <text class="label">自动关机时间</text>
-                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /></view>
+                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /><text class="unit">s</text></view>
                     </view>
                 </view>
 
@@ -234,9 +234,9 @@ onLoad((options) => {
                 : (data.feedSpeed / 10).toFixed(1);
             motorTorque.value = data.motorTorque;
             moveSpeed.value = data.moveSpeed ?? 0;
-            chargingTargetVoltage.value = data.chargingTargetVoltage ?? 0;
-            chargingCurrentLimit.value = data.chargingCurrentLimit ?? 0;
-            startMinimumVoltage.value = data.startMinimumVoltage ?? 0;
+            chargingTargetVoltage.value = (data.chargingTargetVoltage ?? 0) / 100;
+            chargingCurrentLimit.value = (data.chargingCurrentLimit ?? 0) / 1000;
+            startMinimumVoltage.value = (data.startMinimumVoltage ?? 0) / 100;
             autoShutdownTime.value = data.autoShutdownTime ?? 0;
             version.value = data.version;
         } catch (error) {

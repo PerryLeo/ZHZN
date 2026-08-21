@@ -82,7 +82,7 @@ export const DeviceController = {
         await Promise.all(batch.map(code => {
           try {
             if (type === 'send') {
-              return mqttService.publishRaw(code, String(params?.data || '') + '\n');
+              return mqttService.publishRaw(code, String(params?.data || ''));
             }
             return mqttService.publishCommand(code, { type, params: params || {} });
           } catch {
@@ -124,7 +124,7 @@ export const DeviceController = {
       }
 
       const settled = await Promise.allSettled(
-        uniqueCodes.map(deviceCode => mqttService.publishRawCommandAndWait(deviceCode, '$#\n', timeout))
+        uniqueCodes.map(deviceCode => mqttService.publishRawCommandAndWait(deviceCode, '$b\n', timeout))
       );
       const results = settled.map((result, index) => {
         const deviceCode = uniqueCodes[index];

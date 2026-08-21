@@ -9,6 +9,7 @@ router.post('/register', UserController.register);
 router.post('/login', UserController.login);
 
 // 需登录
+router.get('/profile', auth, UserController.profile);
 router.post('/bindDevice', auth, UserController.bindDevice);
 router.get('/devices/summary', auth, UserController.myDeviceSummary);
 router.get('/devices', auth, UserController.myDevices);

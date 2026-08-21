@@ -16,6 +16,7 @@ export const createDeviceState = () => ({
   autoShutdownTime: 0,
   deviceStatus: '等待设备响应',
   fanStatus: '',
+  pumpStatus: '',
   version: '',
   deviceTime: '--:--:--',
   timeSlots: Array.from({ length: 12 }, () => ({ time: '00:00', trips: 0 })),
@@ -33,6 +34,23 @@ export const extractResponseText = (payload) => {
   return String(payload);
 };
 
+const formatDeviceStatus = (status) => {
+  const value = String(status || '').trim();
+  const waitingMatch = value.match(/^Waiting:\s*(\d+)\s*s?$/i);
+  if (waitingMatch) return `等待中，剩余${waitingMatch[1]}秒`;
+
+  const runningMatch = value.match(/^Running:\s*(B-A|A-B)(?:\s|$)/i);
+  if (runningMatch) return runningMatch[1].toUpperCase() === 'B-A' ? '正在从B往A运动' : '正在从A往B运动';
+
+  const statusMap = {
+    Unreturn: '刚上电，未归位',
+    Pause: '暂停',
+    Idle: '空闲',
+    running: '运行中',
+  };
+  return statusMap[value] || value || '未知';
+};
+
 export const parseDeviceResponse = (payload, currentState = createDeviceState()) => {
   const nextState = {
     ...currentState,
@@ -44,16 +62,10 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
   const statusMatch = text.match(/<([^>]+)>/);
   if (statusMatch) {
     const parts = statusMatch[1].split('|');
-    const statusMap = {
-      Unreturn: '未归位',
-      Pause: '暂停',
-      Idle: '空闲',
-      Waiting: '等待中',
-      running: '运行中',
-    };
-    nextState.deviceStatus = statusMap[parts[0]] || parts[0];
+    nextState.deviceStatus = formatDeviceStatus(parts[0]);
     parts.forEach((part) => {
       if (part.includes('Fan:')) nextState.fanStatus = part.split(':')[1];
+      if (part.includes('Pump:')) nextState.pumpStatus = part.split(':')[1];
       if (part.includes('Times:')) nextState.currentTrip = Number.parseInt(part.split(':')[1], 10) || 0;
     });
   }

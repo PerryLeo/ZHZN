@@ -139,6 +139,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .device-asset-thumb svg { width: 21px; height: 21px; }
 .device-asset-thumb i { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border: 2px solid #fff; border-radius: 50%; background: #b8c0cf; }
 .device-asset-thumb i.online { background: var(--success); }
+.device-asset-thumb i.checking { background: #6e8df4; animation: online-status-pulse 1s ease-in-out infinite; }
 .device-cell .user-list-avatar { display: grid; place-items: center; border: 1px solid #e0e6ff; border-radius: 50%; color: #4d68d8; background: #eef2ff; font-size: 14px; font-weight: 800; }
 .device-cell strong, .device-cell span { display: block; }
 .device-cell strong { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
@@ -147,8 +148,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .tag.success { color: #10865d; background: #e9f8f2; }
 .tag.danger { color: #d23b43; background: #fff0f0; }
+.tag.checking { color: #4267d9; background: #eef2ff; }
+.tag.checking::before { width: 8px; height: 8px; border: 1.5px solid currentColor; border-right-color: transparent; background: transparent; animation: online-status-spin .8s linear infinite; }
 .tag.warning { color: #bb7017; background: #fff5e8; }
 .tag.neutral { color: #677185; background: #f0f2f5; }
+.online-checking-hint { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; color: #667aaf; font-size: 12px; white-space: nowrap; }
+.online-checking-hint i { width: 11px; height: 11px; border: 1.5px solid #6d88e8; border-right-color: transparent; border-radius: 50%; animation: online-status-spin .8s linear infinite; }
+@keyframes online-status-spin { to { transform: rotate(360deg); } }
+@keyframes online-status-pulse { 50% { opacity: .35; transform: scale(.82); } }
 .role-tag { display: inline-block; padding: 6px 10px; border-radius: 999px; color: var(--primary); background: var(--primary-soft); font-size: 11px; font-weight: 700; }
 .role-tag.user { color: #596276; background: #f0f2f5; }
 .row-actions { display: flex; gap: 6px; }

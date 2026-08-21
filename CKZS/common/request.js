@@ -2,7 +2,7 @@
 // HTTP 请求封装 — 便于调试，自动注入 Token，统一错误处理
 import { API_BASE_URL, TOKEN_KEY } from './config.js';
 
-const DEBUG = true; // 上线后可改为 false 关闭调试日志
+const DEBUG = false; // 关闭请求调试日志，避免输出密码和 Token
 
 // --------------- 日志工具 ---------------
 const log = {

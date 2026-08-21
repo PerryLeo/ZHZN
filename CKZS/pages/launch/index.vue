@@ -36,7 +36,7 @@
 
 <script setup>
 import { onMounted } from 'vue';
-import { API_BASE_URL, TOKEN_KEY, USER_KEY, SAVED_USERNAME, SAVED_PASSWORD } from '@/common/config.js';
+import { API_BASE_URL, TOKEN_KEY, USER_KEY } from '@/common/config.js';
 
 const go = (url) => uni.reLaunch({ url });
 
@@ -44,7 +44,7 @@ const checkAndGo = () => {
   const token = uni.getStorageSync(TOKEN_KEY);
 
   if (!token) {
-    tryAutoLogin();
+    go('/pages/login/login');
     return;
   }
 
@@ -59,40 +59,11 @@ const checkAndGo = () => {
       } else {
         uni.removeStorageSync(TOKEN_KEY);
         uni.removeStorageSync(USER_KEY);
-        tryAutoLogin();
-      }
-    },
-    fail: () => {
-      go('/pages/home/index');
-    },
-  });
-};
-
-const tryAutoLogin = () => {
-  const username = uni.getStorageSync(SAVED_USERNAME);
-  const password = uni.getStorageSync(SAVED_PASSWORD);
-
-  if (!username || !password) {
-    go('/pages/login/login');
-    return;
-  }
-
-  uni.request({
-    url: API_BASE_URL + '/api/users/login',
-    method: 'POST',
-    data: { username, password },
-    header: { 'Content-Type': 'application/json' },
-    success: (res) => {
-      if (res.data.code === 0 && res.data.data) {
-        uni.setStorageSync(TOKEN_KEY, res.data.data.token);
-        uni.setStorageSync(USER_KEY, JSON.stringify(res.data.data.user));
-        go('/pages/home/index');
-      } else {
         go('/pages/login/login');
       }
     },
     fail: () => {
-      go('/pages/login/login');
+      go('/pages/home/index');
     },
   });
 };

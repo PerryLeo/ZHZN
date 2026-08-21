@@ -16,6 +16,7 @@
       </select>
       <select v-model="query.online" class="filter-select"><option value="">全部在线状态</option><option value="1">在线</option><option value="0">离线</option></select>
       <button class="secondary-btn" type="button" @click="search">查询</button>
+      <span v-if="onlineStatusChecking" class="online-checking-hint"><i></i>正在检测当前页设备在线状态...</span>
     </div>
     <div class="toolbar-actions">
       <button class="secondary-btn" type="button" @click="openGroupModal">+ 新建设备分组</button>
@@ -39,13 +40,13 @@
                     <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4" />
                     <path d="M10 10h4v4h-4z" />
                   </svg>
-                  <i :class="{ online: item.online === 1 }"></i>
+                  <i :class="{ online: item.online === 1, checking: item.onlineChecking }"></i>
                 </span>
                 <div><strong>{{ item.deviceName || item.deviceCode }}</strong><span>{{ item.deviceCode }}</span></div>
               </div>
             </td>
             <td>{{ typeLabel(item.deviceType) }}</td><td>{{ item.owner?.username || '--' }}</td>
-            <td><span class="tag" :class="item.online === 1 ? 'success' : 'danger'">{{ item.online === 1 ? '在线' : '离线' }}</span></td>
+            <td><span class="tag" :class="item.onlineChecking ? 'checking' : item.online === 1 ? 'success' : 'danger'">{{ item.onlineChecking ? '检测中' : item.online === 1 ? '在线' : '离线' }}</span></td>
             <td><span class="tag" :class="item.status === 1 ? 'success' : 'neutral'">{{ item.status === 1 ? '已绑定' : '未绑定' }}</span></td>
             <td>{{ formatTime(item.updatedAt) }}</td>
             <td><div class="row-actions"><button class="text-btn" type="button" @click.stop="openDetail(item)">查看详情</button><button class="text-btn" type="button" @click.stop="openDeviceForm(item)">编辑</button><button v-if="item.status === 1" class="text-btn danger" type="button" @click.stop="openUnbind(item)">解绑</button><template v-else><button class="text-btn" type="button" @click.stop="openBind(item)">绑定</button><button class="text-btn danger" type="button" @click.stop="openDelete(item)">删除</button></template></div></td>
@@ -116,6 +117,7 @@ import { showToast } from '../utils/toast.js';
 const deviceTypes = ['dtu', 'sensor', 'gateway', 'camera', 'controller'];
 const loading = ref(false);
 const submitting = ref(false);
+const onlineStatusChecking = ref(false);
 const query = reactive({ page: 1, pageSize: 10, keyword: '', online: '' });
 const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPages: 0 });
 const deviceModal = reactive({ visible: false, editing: null });
@@ -131,57 +133,46 @@ const boundDevices = ref([]);
 const selectedGroupDeviceIds = ref([]);
 const groupModal = reactive({ visible: false, name: '', loadingDevices: false, submitting: false });
 const router = useRouter();
+let onlineStatusRequestId = 0;
 
-const fetchAllDevicePages = async (params = {}) => {
-  const first = await api.get('/api/admin/devices', { ...params, page: 1, pageSize: 100 });
-  const list = [...first.list];
-  for (let page = 2; page <= first.totalPages; page += 1) {
-    const next = await api.get('/api/admin/devices', { ...params, page, pageSize: 100 });
-    list.push(...next.list);
-  }
-  return list;
-};
 const refreshCurrentPageOnlineStatus = async (devices) => {
   const currentDevices = Array.isArray(devices) ? devices : [];
   if (!currentDevices.length) return;
-
-  const result = await api.post('/api/devices/batchQueryStatus', {
-    deviceCodes: currentDevices.map(device => device.deviceCode),
-    timeout: 5000,
-  });
-  const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item.success]));
-  currentDevices.forEach(device => {
-    device.online = statusMap.get(device.deviceCode) === true ? 1 : 0;
-  });
+  const requestId = ++onlineStatusRequestId;
+  onlineStatusChecking.value = true;
+  try {
+    const result = await api.post('/api/devices/batchQueryStatus', {
+      deviceCodes: currentDevices.map(device => device.deviceCode),
+      timeout: 5000,
+    });
+    const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item.success]));
+    currentDevices.forEach(device => {
+      device.online = statusMap.get(device.deviceCode) === true ? 1 : 0;
+      device.onlineChecking = false;
+    });
+  } catch (error) {
+    currentDevices.forEach(device => {
+      device.online = 0;
+      device.onlineChecking = false;
+    });
+    throw error;
+  } finally {
+    if (requestId === onlineStatusRequestId) onlineStatusChecking.value = false;
+  }
 };
 const load = async () => {
   loading.value = true;
   try {
-    if (!selectedGroupId.value) {
-      Object.assign(pageData, await api.get('/api/admin/devices', query));
-    } else {
-      const group = deviceGroups.value.find(item => item.id === Number(selectedGroupId.value));
-      const groupDeviceIds = new Set((group?.deviceIds || []).map(Number));
-      const allMatchedDevices = await fetchAllDevicePages({
-        keyword: query.keyword,
-        online: query.online,
-      });
-      const filtered = allMatchedDevices.filter(device => groupDeviceIds.has(Number(device.id)));
-      const totalPages = Math.ceil(filtered.length / query.pageSize);
-      if (totalPages > 0 && query.page > totalPages) query.page = totalPages;
-      const offset = (query.page - 1) * query.pageSize;
-      Object.assign(pageData, {
-        list: filtered.slice(offset, offset + query.pageSize),
-        total: filtered.length,
-        page: query.page,
-        pageSize: query.pageSize,
-        totalPages,
-      });
-    }
+    const params = {
+      ...query,
+      ...(selectedGroupId.value ? { groupId: selectedGroupId.value } : {}),
+    };
+    Object.assign(pageData, await api.get('/api/admin/devices', params));
 
     const currentDevices = [...pageData.list];
     currentDevices.forEach(device => {
       device.online = 0;
+      device.onlineChecking = true;
     });
     refreshCurrentPageOnlineStatus(currentDevices).catch(error => {
       showToast(error.message || '设备在线状态检测失败', 'error');
@@ -194,7 +185,6 @@ const search = () => { query.page = 1; load(); };
 const selectGroup = () => { query.page = 1; load(); };
 const changePage = (page) => { query.page = page; load(); };
 const openDetail = (device) => {
-  sessionStorage.setItem(`CKZS_ADMIN_DEVICE_${device.deviceCode}`, JSON.stringify(device));
   router.push({ name: 'device-detail', params: { deviceCode: device.deviceCode } });
 };
 const openDeviceForm = (device = null) => {

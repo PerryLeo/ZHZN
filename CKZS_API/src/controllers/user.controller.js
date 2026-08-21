@@ -95,34 +95,64 @@ export const UserController = {
 
   // ==================== 绑定设备 ====================
   async bindDevice(req, res) {
+    let transaction = null;
     try {
       const { deviceCode } = req.body;
       if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
 
-      // 设备不存在则自动注册（用户通过蓝牙获取 IMEI，物理接触即视为合法）
-      const [device] = await Device.findOrCreate({
+      transaction = await sequelize.transaction();
+      let device = await Device.findOne({
         where: { deviceCode },
-        defaults: { deviceName: deviceCode, deviceType: 'dtu', status: 0, online: 0 },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
       });
+
+      // 设备不存在则自动注册（用户通过蓝牙获取 IMEI，物理接触即视为合法）
+      if (!device) {
+        try {
+          device = await Device.create({
+            deviceCode,
+            deviceName: deviceCode,
+            deviceType: 'dtu',
+            status: 0,
+            online: 0,
+          }, { transaction });
+        } catch (error) {
+          // 两个用户首次绑定同一 IMEI 时，唯一索引会让后一个创建失败；
+          // 回滚后重新加锁读取已创建的设备，再按归属规则判断。
+          if (error.name !== 'SequelizeUniqueConstraintError') throw error;
+          await transaction.rollback();
+          transaction = await sequelize.transaction();
+          device = await Device.findOne({
+            where: { deviceCode },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+          });
+        }
+      }
 
       // 已被别人绑定（userId 非空且不是当前用户）
       if (device.userId && device.userId !== req.user.id) {
-        return fail(res, '设备已被其他用户绑定');
+        await transaction.rollback();
+        return fail(res, '设备已被其他用户绑定', 409);
       }
       // 已被当前用户绑定（幂等）
       if (device.userId === req.user.id) {
+        await transaction.rollback();
         return success(res, device, '设备已绑定到当前用户');
       }
 
       // 未绑定 → 执行绑定
       device.userId = req.user.id;
       device.status = 1;
-      device.online = 1;
+      device.online = 0;
       device.bindAt = new Date();
-      await device.save();
+      await device.save({ transaction });
+      await transaction.commit();
 
       return success(res, device, '设备绑定成功');
     } catch (err) {
+      if (transaction && !transaction.finished) await transaction.rollback();
       return fail(res, err.message || '绑定失败');
     }
   },

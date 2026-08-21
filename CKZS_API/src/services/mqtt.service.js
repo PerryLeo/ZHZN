@@ -177,7 +177,7 @@ class MqttService {
    * 透传模式：直接下发纯文本字符串给硬件，并等待硬件在 data 频道的第一条回复。
    * 适用于不支持 JSON ACK 协议的老式 DTU/4G 模块。
    * @param {string} deviceCode  设备编号
-   * @param {string} rawData     要发送的原始字符串，如 "$#"
+   * @param {string} rawData     要发送的原始字符串，如 "$b"
    * @param {number} timeoutMs   等待超时（毫秒）
    */
   publishRawCommandAndWait(deviceCode, rawData, timeoutMs = 10000) {
@@ -186,6 +186,11 @@ class MqttService {
 
     // deviceCode 即 IMEI，与 _handleDataUp 中 parseDeviceCode 返回的值一致
     const queueKey = deviceCode;
+
+    // 老协议的 data 回包不带命令标识；同一设备同时等待两条指令时，无法可靠区分回包归属。
+    if (pendingRawCommands.has(queueKey)) {
+      throw new Error('设备正在处理上一条指令，请稍后重试');
+    }
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
