@@ -240,12 +240,12 @@ const connectDevice = (device) => {
             getApp().globalData.sppSocket = socket;
             let saved = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
             if (!saved.find(d => d.mac === device.mac)) {
-                saved.push({ name: device.name, mac: device.mac, addTime: Date.now() });
+                saved.push({ name: device.name, initialName: device.name, remarkName: device.name, mac: device.mac, addTime: Date.now() });
                 uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved);
             }
             uni.showToast({ title: '连接成功', icon: 'success' });
             setTimeout(() => {
-                uni.navigateTo({ url: `/pages/deviceState/index?name=${encodeURIComponent(device.name)}&mac=${device.mac}` });
+                uni.navigateTo({ url: `/pages/deviceState/index?name=${encodeURIComponent(device.name)}&initialName=${encodeURIComponent(device.name)}&remarkName=${encodeURIComponent(device.name)}&mac=${device.mac}` });
             }, 1000);
         } catch (e) {
             console.error('[蓝牙连接失败]', e);

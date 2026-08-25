@@ -12,10 +12,10 @@
             <scroll-view scroll-y class="settings-scroll">
                 <view class="settings-group">
                     <view class="setting-item">
-                        <text class="label">设备名称</text>
+                        <text class="label">备注名称</text>
                         <view class="right-box">
-                            <input class="item-input highlight" v-model="deviceName" placeholder="请输入设备名称"
-                                @blur="handleNameBlur" />
+                            <input class="item-input highlight" v-model="remarkName" placeholder="请输入备注名称"
+                                @blur="handleRemarkNameBlur" />
                         </view>
                     </view>
                 </view>
@@ -57,10 +57,10 @@
 
                 <view class="settings-group">
                     <view class="setting-item">
-                        <text class="label">距离软限位</text>
+                        <text class="label">软限位距离</text>
                         <view class="right-box">
-                            <input class="item-input" v-model="softLimit" type="number"
-                                @blur="handleDataBlur('$7=', softLimit * 10)" />
+                            <input class="item-input" v-model="softLimit" type="number" min="0" max="100" step="0.01"
+                                @blur="handleSoftLimitBlur" />
                             <text class="unit">米</text>
                         </view>
                     </view>
@@ -96,7 +96,7 @@
                         <view class="right-box"><input class="item-input" v-model="chargingTargetVoltage" type="number" @blur="handleDataBlur('$d=', chargingTargetVoltage * 100)" /><text class="unit">V</text></view>
                     </view>
                     <view class="setting-item">
-                        <text class="label">充电电流限制</text>
+                        <text class="label">充电电流预警</text>
                         <view class="right-box"><input class="item-input" v-model="chargingCurrentLimit" type="number" @blur="handleDataBlur('$e=', chargingCurrentLimit * 1000)" /><text class="unit">A</text></view>
                     </view>
                     <view class="setting-item">
@@ -190,8 +190,8 @@ import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
 
-const deviceName = ref('未连接设备');
-const initialDeviceName = ref('');
+const remarkName = ref('');
+const savedRemarkName = ref('');
 const remoteTime = ref('0');
 const nearTime = ref('0');
 const manualTrips = ref('0');
@@ -216,10 +216,8 @@ const modeModalVisible = ref(false);
 
 onLoad((options) => {
     if (options.deviceCode) deviceCode.value = decodeURIComponent(options.deviceCode);
-    if (options.name) {
-        deviceName.value = decodeURIComponent(options.name);
-        initialDeviceName.value = deviceName.value;
-    }
+    if (options.remarkName) remarkName.value = decodeURIComponent(options.remarkName);
+    savedRemarkName.value = remarkName.value;
     if (options.data) {
         try {
             const data = JSON.parse(decodeURIComponent(options.data));
@@ -228,7 +226,7 @@ onLoad((options) => {
             manualTrips.value = data.manualTripsVal;
             runMode.value = data.runMode;
             feedTimeout.value = data.feedTimeout;
-            softLimit.value = (data.softLimit / 10).toFixed(1);
+            softLimit.value = (data.softLimit / 100).toFixed(2);
             feedSpeed.value = Number.isInteger(data.feedSpeed / 10)
                 ? data.feedSpeed / 10
                 : (data.feedSpeed / 10).toFixed(1);
@@ -306,6 +304,15 @@ const handleDataBlur = (header, value) => {
     setDeviceData(header + value);
 };
 
+const handleSoftLimitBlur = () => {
+    const value = Number(softLimit.value);
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+        uni.showToast({ title: '软限位距离需为0-100米', icon: 'none' });
+        return;
+    }
+    setDeviceData(`$7=${Math.round(value * 100)}\n`);
+};
+
 const handleMoveSpeedBlur = () => {
     const value = Number(moveSpeed.value);
     if (!Number.isFinite(value) || value < 50 || value > 100) {
@@ -329,31 +336,26 @@ const copyResponse = () => {
     });
 };
 
-const handleNameBlur = async () => {
-    const newName = deviceName.value.trim();
-    if (!newName) {
-        deviceName.value = initialDeviceName.value;
-        uni.showToast({ title: '名称必填', icon: 'none' });
-        return;
-    }
-    if (newName === initialDeviceName.value || !deviceCode.value) return;
+const handleRemarkNameBlur = async () => {
+    const newRemarkName = remarkName.value.trim();
+    if (!deviceCode.value) return;
 
     uni.showLoading({ title: '正在保存...', mask: true });
     try {
-        await http.post('/api/users/updateDeviceName', {
+        await http.post('/api/users/updateDeviceRemark', {
             deviceCode: deviceCode.value,
-            deviceName: newName
+            remarkName: newRemarkName
         });
-        initialDeviceName.value = newName;
+        savedRemarkName.value = newRemarkName;
         uni.$emit('UPDATE_NETWORK_DEVICE_NAME', {
             deviceCode: deviceCode.value,
-            deviceName: newName
+            remarkName: newRemarkName
         });
-        uni.showToast({ title: '已保存', icon: 'success' });
+        uni.showToast({ title: '备注名称已保存', icon: 'success' });
     } catch (error) {
-        deviceName.value = initialDeviceName.value;
+        remarkName.value = savedRemarkName.value;
         uni.showToast({
-            title: typeof error === 'string' ? error : '名称保存失败',
+            title: typeof error === 'string' ? error : '备注名称保存失败',
             icon: 'none'
         });
     } finally {

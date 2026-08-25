@@ -31,7 +31,7 @@
         <tr v-if="loading"><td colspan="7" class="empty-state">数据加载中...</td></tr>
         <tr v-else-if="!pageData.list.length"><td colspan="7" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
-          <tr v-for="item in pageData.list" :key="item.id" class="clickable-row" @click="openDetail(item)">
+          <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': item.online === 1 && !item.onlineChecking, 'device-row-disabled': item.online !== 1 || item.onlineChecking }" @click="openDetail(item)">
             <td>
               <div class="device-cell">
                 <span class="device-thumb device-asset-thumb" aria-hidden="true">
@@ -185,6 +185,14 @@ const search = () => { query.page = 1; load(); };
 const selectGroup = () => { query.page = 1; load(); };
 const changePage = (page) => { query.page = page; load(); };
 const openDetail = (device) => {
+  if (device?.onlineChecking) {
+    showToast('正在检测设备状态，请稍后进入', 'info');
+    return;
+  }
+  if (device?.online !== 1) {
+    showToast('设备离线，无法进入详情', 'error');
+    return;
+  }
   router.push({ name: 'device-detail', params: { deviceCode: device.deviceCode } });
 };
 const openDeviceForm = (device = null) => {

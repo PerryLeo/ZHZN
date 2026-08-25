@@ -34,6 +34,24 @@
                 </view>
             </view>
 
+            <view class="realtime-card">
+                <view class="realtime-metric">
+                    <text class="realtime-label">电量</text>
+                    <view class="realtime-value-box">
+                        <text class="realtime-value">{{ formatRealtimeValue(state.batteryLevel) }}</text>
+                        <text v-if="state.batteryLevel !== null" class="realtime-unit">%</text>
+                    </view>
+                </view>
+                <view class="realtime-divider"></view>
+                <view class="realtime-metric">
+                    <text class="realtime-label">充电电流</text>
+                    <view class="realtime-value-box">
+                        <text class="realtime-value">{{ formatRealtimeValue(state.chargingCurrent) }}</text>
+                        <text v-if="state.chargingCurrent !== null" class="realtime-unit">A</text>
+                    </view>
+                </view>
+            </view>
+
             <view class="action-grid">
                 <view class="action-card" @click="handleAction('manual')">
                     <view class="icon-box manual">
@@ -91,7 +109,7 @@
                         </view>
                         <view class="data-item border-line">
                             <view class="val-box"><text class="val">{{ state.chargingCurrentLimit / 1000 }}</text><text class="unit">A</text></view>
-                            <text class="lab">充电电流限制</text>
+                            <text class="lab">充电电流预警</text>
                         </view>
                         <view class="data-item border-line">
                             <view class="val-box"><text class="val">{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view>
@@ -109,12 +127,12 @@
                         <view class="data-item border-line">
                             <view class="val-box">
                                 <text v-if="state.softLimit && state.softLimit > 0" class="val">
-                                    {{ (state.softLimit / 10).toFixed(1) }}
+                                    {{ (state.softLimit / 100).toFixed(2) }}
                                 </text>
                                 <text v-if="state.softLimit && state.softLimit > 0" class="unit">米</text>
                                 <text v-else class="val soft-limit-off">关闭</text>
                             </view>
-                            <text class="lab">距离软限位</text>
+                            <text class="lab">软限位距离</text>
                         </view>
                         <view class="data-item border-line">
                             <view class="val-box">
@@ -175,6 +193,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { onLoad, onShow, onHide } from '@dcloudio/uni-app';
+import http from '@/common/request.js';
+import { TOKEN_KEY } from '@/common/config.js';
 
 const state = reactive({
     currentTrip: 0,
@@ -197,7 +217,12 @@ const state = reactive({
     pumpStatus: '',
     version: '',
     deviceTime: '00:00:00',
+    batteryLevel: null,
+    chargingCurrent: null,
     mac: '',
+    deviceCode: '',
+    initialName: '',
+    remarkName: '',
     timeSlots: [],
 });
 
@@ -206,10 +231,13 @@ const isRefreshing = ref(false);
 let readInterval = null;
 let isWaitingTimeSync = false;
 let timeSyncTimeout = null;
+let bindingDeviceCode = '';
 
 onLoad((options) => {
     if (options.name) pageTitle.value = decodeURIComponent(options.name);
     if (options.mac) state.mac = options.mac;
+    state.initialName = options.initialName ? decodeURIComponent(options.initialName) : pageTitle.value;
+    state.remarkName = options.remarkName ? decodeURIComponent(options.remarkName) : pageTitle.value;
 });
 
 const percentage = computed(() => {
@@ -223,6 +251,8 @@ const ringGradient = computed(() => {
 });
 
 const progressRotation = computed(() => (percentage.value / 100) * 360);
+
+const formatRealtimeValue = (value) => value === null || value === undefined ? '--' : value;
 
 onMounted(() => {
     uni.$on('UPDATE_DEVICE_NAME', (newName) => {
@@ -307,6 +337,31 @@ const sendInitCommand = () => {
     } catch (e) {
         isRefreshing.value = false;
         uni.hideLoading();
+    }
+};
+
+const bindDeviceByIdentity = async () => {
+    if (!state.deviceCode || !state.initialName || bindingDeviceCode === state.deviceCode) return;
+    if (!uni.getStorageSync(TOKEN_KEY)) return;
+    bindingDeviceCode = state.deviceCode;
+    try {
+        const device = await http.post('/api/users/bindDevice', {
+            deviceCode: state.deviceCode,
+            initialName: state.initialName,
+        });
+        state.remarkName = device?.remarkName || state.initialName;
+        pageTitle.value = state.remarkName;
+        const savedDevices = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
+        const savedDevice = savedDevices.find(item => item.mac === state.mac);
+        if (savedDevice) {
+            savedDevice.initialName = state.initialName;
+            savedDevice.deviceCode = state.deviceCode;
+            savedDevice.remarkName = state.remarkName;
+            uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', savedDevices);
+        }
+    } catch (error) {
+        bindingDeviceCode = '';
+        uni.showToast({ title: typeof error === 'string' ? error : '设备绑定失败', icon: 'none' });
     }
 };
 
@@ -412,6 +467,18 @@ const parseLine = (line) => {
         return;
     }
 
+    const batteryMatch = line.match(/(?:^|[|\r\n])BatLevel:\s*(-?\d+(?:\.\d+)?)\s*%?/i);
+    if (batteryMatch) state.batteryLevel = Number(batteryMatch[1]);
+    const currentMatch = line.match(/(?:^|[|\r\n])I_Chg:\s*(-?\d+(?:\.\d+)?)\s*A?/i);
+    if (currentMatch) state.chargingCurrent = Number(currentMatch[1]);
+
+    const imeiMatch = line.match(/^DTU_IMEI:\s*([0-9A-Za-z-]+)/i);
+    if (imeiMatch) {
+        state.deviceCode = imeiMatch[1];
+        bindDeviceByIdentity();
+        return;
+    }
+
     const match = line.match(/^\$([0-9ad-g])=(-?\d+(?:\.\d+)?)/);
     if (match) {
         const key = match[1];
@@ -456,7 +523,7 @@ const handleAction = (type) => {
     if (type === 'manual') {
         const params = encodeURIComponent(JSON.stringify(state));
         uni.navigateTo({
-            url: `/pages/deviceState/paramsSet?name=${encodeURIComponent(pageTitle.value)}&data=${params}`
+            url: `/pages/deviceState/paramsSet?name=${encodeURIComponent(pageTitle.value)}&initialName=${encodeURIComponent(state.initialName)}&remarkName=${encodeURIComponent(state.remarkName)}&data=${params}`
         });
     } else {
         const params = encodeURIComponent(JSON.stringify(state.timeSlots || []));
@@ -572,7 +639,7 @@ const handleRefresh = () => {
 .progress-section {
     display: flex;
     justify-content: center;
-    margin-bottom: 42rpx;
+    margin-bottom: 24rpx;
 
     .progress-ring-container {
         position: relative;
@@ -708,6 +775,58 @@ const handleRefresh = () => {
             }
         }
     }
+}
+
+.realtime-card {
+    height: 72rpx;
+    margin: 0 0 16rpx;
+    padding: 0 24rpx;
+    display: flex;
+    align-items: center;
+    background: #F7FAFF;
+    border: 1rpx solid rgba(58, 141, 255, 0.12);
+    border-radius: 18rpx;
+    box-sizing: border-box;
+}
+
+.realtime-metric {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+}
+
+.realtime-label {
+    margin-right: 10rpx;
+    font-size: 20rpx;
+    color: #7B8794;
+}
+
+.realtime-value-box {
+    display: flex;
+    align-items: baseline;
+}
+
+.realtime-value {
+    font-size: 28rpx;
+    line-height: 1;
+    font-weight: 800;
+    color: $primary-color;
+    font-variant-numeric: tabular-nums;
+}
+
+.realtime-unit {
+    margin-left: 4rpx;
+    font-size: 19rpx;
+    color: #7B8794;
+}
+
+.realtime-divider {
+    width: 1rpx;
+    height: 28rpx;
+    margin: 0 14rpx;
+    background: rgba(58, 141, 255, 0.15);
 }
 
 .action-grid {

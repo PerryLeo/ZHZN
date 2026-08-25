@@ -13,7 +13,7 @@ router.get('/profile', auth, UserController.profile);
 router.post('/bindDevice', auth, UserController.bindDevice);
 router.get('/devices/summary', auth, UserController.myDeviceSummary);
 router.get('/devices', auth, UserController.myDevices);
-router.post('/updateDeviceName', auth, UserController.updateDeviceName);
+router.post('/updateDeviceRemark', auth, UserController.updateDeviceRemark);
 router.post('/unbindDevice', auth, UserController.unbindDevice);
 router.post('/resetPassword', auth, UserController.resetPassword);
 router.post('/changePassword', auth, UserController.changePassword);

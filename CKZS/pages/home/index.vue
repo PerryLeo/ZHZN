@@ -86,6 +86,7 @@
           <view class="bound-grid" v-if="!boundLoading && filteredBoundDevices.length > 0">
             <view
               class="bound-card"
+              :class="{ 'is-disabled': item.statusLoading || item.online !== 1 }"
               v-for="item in filteredBoundDevices"
               :key="item.id"
               @click="toBoundDevice(item)"
@@ -96,18 +97,20 @@
                   <view class="connection-dot" :class="{ online: item.online === 1, checking: item.statusLoading }"></view>
                 </view>
                 <view
-                  class="device-switch"
+                  class="device-action-button"
                   :class="{
-                    active: item.switchOn === true,
-                    disabled: item.online !== 1 || item.switchLoading
+                    [item.runState]: true,
+                    disabled: item.online !== 1 || item.statusLoading || item.switchLoading || item.runState === 'unknown' || item.runState === 'returning'
                   }"
-                  @click.stop="handleDeviceSwitch(item)"
+                  @click.stop="handleDeviceAction(item)"
                 >
-                  <view class="switch-thumb"></view>
+                  <text class="device-action-status">{{ item.runStateLabel }}</text>
+                  <text class="device-action-divider">|</text>
+                  <text class="device-action-label">{{ getDeviceActionLabel(item) }}</text>
                 </view>
               </view>
               <view class="bound-info">
-                <text class="bound-name">{{ item.deviceName || item.deviceCode }}</text>
+                <text class="bound-name">{{ item.remarkName || item.deviceCode }}</text>
               </view>
               <view class="bound-metrics">
                 <view class="bound-metric">
@@ -121,8 +124,8 @@
                 </view>
               </view>
               <view class="mode-row">
-                <text class="mode-label">停止原因</text>
-                <text class="mode-value">{{ item.stopReason }}</text>
+                <text class="mode-label">异常状态</text>
+                <text class="mode-value" :class="{ abnormal: item.hasAlarm }">{{ item.abnormalStatus }}</text>
               </view>
             </view>
           </view>
@@ -167,7 +170,7 @@
                   </view>
                   <view class="device-info">
                     <view class="info-top">
-                      <text class="d-name">{{ item.name }}</text>
+                    <text class="d-name">{{ item.remarkName || '未知设备' }}</text>
                       <text class="abnormal-tag" v-if="item.isAbnormal">异常</text>
                     </view>
                     <view class="info-bottom">
@@ -214,12 +217,12 @@
     <view class="custom-modal-mask" :class="{ 'show': editModalVisible }" @click="closeEditModal">
       <view class="custom-modal" @click.stop :class="{ 'slide-up': editModalVisible }">
         <view class="modal-header">
-          <text class="modal-title">修改设备名称</text>
+        <text class="modal-title">修改备注名称</text>
         </view>
         <view class="modal-body">
           <view class="input-wrap">
             <input class="modern-input" v-model="editDeviceName" :focus="editModalVisible"
-              placeholder="请输入新的设备名称" placeholder-style="color: #ccc;" />
+              placeholder="请输入备注名称" placeholder-style="color: #ccc;" />
           </view>
         </view>
         <view class="modal-footer">
@@ -483,10 +486,9 @@ const createDeviceGroup = async () => {
   }
 };
 
-// 待硬件协议确认后，只需补充开启、关闭指令内容。
-const DEVICE_SWITCH_COMMANDS = {
-  on: '',
-  off: ''
+const DEVICE_ACTION_COMMANDS = {
+  start: '$h=1',
+  pause: '$h=0'
 };
 
 const findMetricValue = (rawData, names) => {
@@ -495,21 +497,53 @@ const findMetricValue = (rawData, names) => {
   return match ? Number(match[1]) : null;
 };
 
+const parseRunState = (rawData) => {
+  const raw = String(rawData || '');
+  const carMatch = raw.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
+  const carState = carMatch ? carMatch[1].trim() : '';
+  if (/^Pause$/i.test(carState)) {
+    return { runState: 'paused', runStateLabel: '暂停' };
+  }
+  if (/^(?:Wait|A-B|B-A)$/i.test(carState)) {
+    return { runState: 'running', runStateLabel: '开始' };
+  }
+  if (/^(?:Idle|Unreturn)$/i.test(carState)) {
+    return { runState: 'idle', runStateLabel: '空闲' };
+  }
+  if (/^Return$/i.test(carState)) {
+    return { runState: 'returning', runStateLabel: '归位中' };
+  }
+  return { runState: 'unknown', runStateLabel: '状态未知' };
+};
+
+const formatAbnormalStatus = (rawData) => {
+  const batteryAlarmMap = {
+    0: '正常', 1: '满', 2: '过流', 3: '拔出', 4: '过压', 5: '欠流', 6: '电池电压过低'
+  };
+  const fanAlarmMap = {
+    0: '正常', 1: '风扇1低于阈值', 2: '风扇2低于阈值', 3: '两个风扇均低于阈值', 5: '启动瞬间电流不足'
+  };
+  const batteryAlarm = findMetricValue(rawData, ['BatAlarm']);
+  const fanAlarm = findMetricValue(rawData, ['FanAlarm']);
+  if (batteryAlarm === null || fanAlarm === null) {
+    return { abnormalStatus: '--', hasAlarm: false };
+  }
+  const alarms = [];
+  if (batteryAlarm !== 0) alarms.push(`电池：${batteryAlarmMap[batteryAlarm] || `未知(${batteryAlarm})`}`);
+  if (fanAlarm !== 0) alarms.push(`风机：${fanAlarmMap[fanAlarm] || `未知(${fanAlarm})`}`);
+  return {
+    abnormalStatus: alarms.length > 0 ? alarms.join('；') : '无异常',
+    hasAlarm: alarms.length > 0
+  };
+};
+
 const parseDeviceMetrics = (result) => {
   const rawData = typeof result?.data === 'string' ? result.data : '';
-  const reasonMap = {
-    0: '无',
-    1: '满',
-    2: '过流',
-    3: '拔出',
-    4: '过压',
-    5: '欠流'
-  };
-  const reason = findMetricValue(rawData, ['Reason']);
   return {
     battery: findMetricValue(rawData, ['BatLevel']),
     current: findMetricValue(rawData, ['I_Chg']),
-    stopReason: reason === null ? '--' : (reasonMap[reason] || `未知(${reason})`),
+    ...formatAbnormalStatus(rawData),
+    ...parseRunState(rawData),
     rawData,
     timestamp: result?.timestamp || ''
   };
@@ -542,7 +576,10 @@ const fetchBoundDeviceStatuses = async (devices) => {
       const metrics = parseDeviceMetrics(status);
       device.battery = metrics.battery;
       device.current = metrics.current;
-      device.stopReason = metrics.stopReason;
+      device.abnormalStatus = metrics.abnormalStatus;
+      device.hasAlarm = metrics.hasAlarm;
+      device.runState = metrics.runState;
+      device.runStateLabel = metrics.runStateLabel;
       device.rawStatusData = metrics.rawData;
       device.statusTimestamp = metrics.timestamp;
     });
@@ -557,19 +594,25 @@ const fetchBoundDeviceStatuses = async (devices) => {
   }
 };
 
-const handleDeviceSwitch = async (device) => {
+const getDeviceActionLabel = (device) => {
+  if (device.switchLoading) return '操作中';
+  if (device.runState === 'returning') return '请等待';
+  return device.runState === 'running' ? '暂停' : '开始';
+};
+
+const handleDeviceAction = async (device) => {
   if (device.online !== 1) {
     uni.showToast({ title: '设备离线，无法操作', icon: 'none' });
     return;
   }
-  if (device.switchLoading) return;
-
-  const nextSwitchOn = device.switchOn !== true;
-  const command = nextSwitchOn ? DEVICE_SWITCH_COMMANDS.on : DEVICE_SWITCH_COMMANDS.off;
-  if (!command) {
-    uni.showToast({ title: '开关指令待配置', icon: 'none' });
+  if (device.statusLoading || device.runState === 'unknown' || device.runState === 'returning') {
+    uni.showToast({ title: device.runState === 'returning' ? '设备归位中，请稍后操作' : '设备状态未确认，暂不可操作', icon: 'none' });
     return;
   }
+  if (device.switchLoading) return;
+
+  const action = device.runState === 'running' ? 'pause' : 'start';
+  const command = DEVICE_ACTION_COMMANDS[action];
 
   device.switchLoading = true;
   try {
@@ -579,8 +622,9 @@ const handleDeviceSwitch = async (device) => {
       params: { data: command },
       timeout: 10000
     }, { timeout: 12000 });
-    device.switchOn = nextSwitchOn;
-    uni.showToast({ title: nextSwitchOn ? '已开启' : '已关闭', icon: 'success' });
+    device.runState = action === 'start' ? 'running' : 'paused';
+    device.runStateLabel = action === 'start' ? '开始' : '暂停';
+    uni.showToast({ title: action === 'start' ? '已开始' : '已暂停', icon: 'success' });
   } catch (error) {
     uni.showToast({
       title: typeof error === 'string' ? error : '操作失败',
@@ -635,12 +679,14 @@ const fetchBoundDevices = async ({ throwOnError = false, refreshSummaryAfterStat
       online: 0,
       battery: null,
       current: null,
-      stopReason: '--',
-      statusLoading: false,
+      abnormalStatus: '--',
+      hasAlarm: false,
+      statusLoading: true,
       statusError: '',
       rawStatusData: '',
       statusTimestamp: '',
-      switchOn: null,
+      runState: 'unknown',
+      runStateLabel: '状态检测中',
       switchLoading: false
     }));
     // 卡片先显示，再异步查询当前页设备的实时状态；查询结果会同步回顶部汇总。
@@ -717,8 +763,17 @@ const getSignalColor = (level) => {
 const normalizeMac = (mac) => String(mac || '').replace(/[^0-9A-F]/gi, '').toUpperCase();
 
 const loadSavedDevices = () => {
-  devices.value = (uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || []).map(d => ({
+  const saved = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
+  let hasMigration = false;
+  devices.value = saved.map(d => {
+    if (!d.remarkName) {
+      d.remarkName = d.name || '未知设备';
+      hasMigration = true;
+    }
+    return {
     name: d.name || '未知设备',
+    initialName: d.initialName || d.name || '未知设备',
+    remarkName: d.remarkName,
     mac: d.mac,
     addTime: d.addTime,
     canConnect: false,
@@ -727,7 +782,9 @@ const loadSavedDevices = () => {
     signalLevel: 0,
     signalColor: '#E0E0E0',
     show: 'none'
-  }));
+    };
+  });
+  if (hasMigration) uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved);
 };
 
 const connectableCount = computed(() => devices.value.filter(d => d.canConnect).length);
@@ -829,7 +886,7 @@ const stopSilentScan = () => {
 
 const handleBoundDeviceNameUpdated = (payload) => {
   const device = boundDevices.value.find(item => item.deviceCode === payload?.deviceCode);
-  if (device && payload.deviceName) device.deviceName = payload.deviceName;
+  if (device) device.remarkName = payload.remarkName || null;
 };
 
 onMounted(() => {
@@ -868,27 +925,37 @@ const onSwipeClick = (e, item) => {
       success: res => {
         if (res.confirm) {
           devices.value = devices.value.filter(d => d.mac !== item.mac);
-          uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', devices.value.map(({ name, mac, addTime }) => ({ name, mac, addTime })));
+          uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', devices.value.map(({ name, initialName, remarkName, deviceCode, mac, addTime }) => ({ name, initialName, remarkName, deviceCode, mac, addTime })));
           uni.showToast({ title: '已删除', icon: 'success' });
         } else { item.show = 'none'; }
       }
     });
   } else if (e.index === 0) {
-    editingItem.value = item; editDeviceName.value = item.name; editModalVisible.value = true; item.show = 'none';
+    editingItem.value = item; editDeviceName.value = item.remarkName || ''; editModalVisible.value = true; item.show = 'none';
   }
 };
 
 const closeEditModal = () => { editModalVisible.value = false; devices.value.forEach(d => d.show = 'none'); };
 
-const confirmEdit = () => {
+const confirmEdit = async () => {
   const newName = editDeviceName.value.trim();
-  if (!newName) return uni.showToast({ title: '名称必填', icon: 'none' });
   const match = devices.value.find(d => d.mac === editingItem.value.mac);
-  if (match) { match.name = newName; match.isAbnormal = newName.startsWith('HF-SPP') || newName.startsWith('JDY'); }
+  const previousRemarkName = match?.remarkName || '';
+  if (match) match.remarkName = newName;
   const saved = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
   const sItem = saved.find(d => d.mac === editingItem.value.mac);
-  if (sItem) { sItem.name = newName; uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved); }
-  uni.showToast({ title: '修改成功', icon: 'success' });
+  if (sItem) { sItem.remarkName = newName; sItem.initialName = sItem.initialName || sItem.name; }
+  if (sItem?.deviceCode && uni.getStorageSync('AUTH_TOKEN')) {
+    try {
+      await http.post('/api/users/updateDeviceRemark', { deviceCode: sItem.deviceCode, remarkName: newName });
+    } catch (error) {
+      if (match) match.remarkName = previousRemarkName;
+      uni.showToast({ title: typeof error === 'string' ? error : '备注名称保存失败', icon: 'none' });
+      return;
+    }
+  }
+  uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved);
+  uni.showToast({ title: '备注名称已保存', icon: 'success' });
   closeEditModal();
 };
 
@@ -912,7 +979,7 @@ const toDeviceDetail = item => {
       socket.connect();
       if (!socket.isConnected()) throw new Error('Socket 未连接');
       getApp().globalData.sppSocket = socket;
-      uni.navigateTo({ url: `/pages/deviceState/index?name=${encodeURIComponent(item.name)}&mac=${item.mac}` });
+      uni.navigateTo({ url: `/pages/deviceState/index?name=${encodeURIComponent(item.remarkName || '未知设备')}&initialName=${encodeURIComponent(item.initialName || item.name)}&remarkName=${encodeURIComponent(item.remarkName || '')}&mac=${item.mac}` });
     } catch (e) {
       console.error('[蓝牙连接失败]', e);
       try { socket?.close(); } catch (closeError) { }
@@ -1004,19 +1071,27 @@ const sendBatchDeviceCommand = async (command, actionLabel) => {
   }
 };
 
-const turnAllOn = () => sendBatchDeviceCommand('$B', '开始');
+const turnAllOn = () => sendBatchDeviceCommand('$h=1\n', '开始');
 
-const turnAllOff = () => sendBatchDeviceCommand('$C', '暂停');
+const turnAllOff = () => sendBatchDeviceCommand('$h=0\n', '暂停');
 
 const toBoundDevice = (item) => {
+  if (item?.statusLoading) {
+    uni.showToast({ title: '正在检测设备状态，请稍后进入', icon: 'none' });
+    return;
+  }
+  if (item?.online !== 1) {
+    uni.showToast({ title: '设备离线，无法进入详情', icon: 'none' });
+    return;
+  }
   if (!item?.deviceCode) {
     uni.showToast({ title: '设备编号缺失', icon: 'none' });
     return;
   }
 
-  const name = item.deviceName || item.deviceCode;
+  const name = item.remarkName || item.deviceCode;
   uni.navigateTo({
-    url: `/pages/networkDeviceState/index?deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}`
+    url: `/pages/networkDeviceState/index?deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}&remarkName=${encodeURIComponent(item.remarkName || '')}`
   });
 };
 </script>
@@ -1542,24 +1617,34 @@ const toBoundDevice = (item) => {
   }
 }
 
-.device-switch {
-  width: 68rpx;
-  height: 38rpx;
+.device-action-button {
+  min-width: 140rpx;
+  height: 44rpx;
   flex-shrink: 0;
-  padding: 4rpx;
+  padding: 0 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
   border-radius: 22rpx;
-  background: #D9DEE7;
+  background: #F1F3F6;
   box-sizing: border-box;
-  box-shadow: inset 0 1rpx 4rpx rgba(45, 49, 57, 0.1);
-  transition: background 0.2s ease, opacity 0.2s ease;
+  color: #6B7280;
+  transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 
-  &.active {
-    background: linear-gradient(135deg, #FFA53D, $primary-color);
-    box-shadow: 0 4rpx 12rpx rgba(247, 150, 25, 0.24);
+  &.running {
+    background: #FFF2DE;
+    color: #E58A13;
+  }
 
-    .switch-thumb {
-      transform: translateX(30rpx);
-    }
+  &.paused {
+    background: #EAF2FF;
+    color: #3A8DFF;
+  }
+
+  &.idle {
+    background: #F1F3F6;
+    color: #6B7280;
   }
 
   &.disabled {
@@ -1571,13 +1656,19 @@ const toBoundDevice = (item) => {
   }
 }
 
-.switch-thumb {
-  width: 30rpx;
-  height: 30rpx;
-  border-radius: 50%;
-  background: #FFFFFF;
-  box-shadow: 0 2rpx 8rpx rgba(45, 49, 57, 0.22);
-  transition: transform 0.2s ease;
+.device-action-status,
+.device-action-label {
+  font-size: 22rpx;
+  line-height: 1;
+}
+
+.device-action-label {
+  font-weight: 600;
+}
+
+.device-action-divider {
+  font-size: 20rpx;
+  opacity: 0.45;
 }
 
 .bound-info {
@@ -1673,14 +1764,19 @@ const toBoundDevice = (item) => {
 }
 
 .mode-value {
-  max-width: 110rpx;
+  max-width: 210rpx;
   font-size: 22rpx;
   line-height: 30rpx;
   font-weight: 700;
   color: $primary-color;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: right;
+  white-space: normal;
+
+  &.abnormal {
+    color: #FF4D4F;
+  }
 }
 
 /* ===== 蓝牙设备卡片 ===== */

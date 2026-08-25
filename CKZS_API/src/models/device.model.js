@@ -18,7 +18,12 @@ export const initDeviceModel = (sequelize) => {
     deviceName: {
       type: DataTypes.STRING(100),
       allowNull: true,
-      comment: '设备名称 (便于识别)',
+      comment: '设备初始名称（与 IMEI 一一对应，不可修改）',
+    },
+    remarkName: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: '用户备注名称（可修改）',
     },
     deviceType: {
       type: DataTypes.STRING(50),
@@ -49,6 +54,9 @@ export const initDeviceModel = (sequelize) => {
     tableName: 'devices',
     timestamps: true,
     underscored: false,
+    indexes: [
+      { unique: true, fields: ['deviceName'], name: 'uniq_devices_initial_name' },
+    ],
   });
 
   return Device;

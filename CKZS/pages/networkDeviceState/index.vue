@@ -34,6 +34,24 @@
                 </view>
             </view>
 
+            <view class="realtime-card">
+                <view class="realtime-metric">
+                    <text class="realtime-label">电量</text>
+                    <view class="realtime-value-box">
+                        <text class="realtime-value">{{ formatRealtimeValue(state.batteryLevel) }}</text>
+                        <text v-if="state.batteryLevel !== null" class="realtime-unit">%</text>
+                    </view>
+                </view>
+                <view class="realtime-divider"></view>
+                <view class="realtime-metric">
+                    <text class="realtime-label">充电电流</text>
+                    <view class="realtime-value-box">
+                        <text class="realtime-value">{{ formatRealtimeValue(state.chargingCurrent) }}</text>
+                        <text v-if="state.chargingCurrent !== null" class="realtime-unit">A</text>
+                    </view>
+                </view>
+            </view>
+
             <view class="action-grid">
                 <view class="action-card" @click="handleAction('manual')">
                     <view class="icon-box manual">
@@ -91,7 +109,7 @@
                         </view>
                         <view class="data-item border-line">
                             <view class="val-box"><text class="val">{{ state.chargingCurrentLimit / 1000 }}</text><text class="unit">A</text></view>
-                            <text class="lab">充电电流限制</text>
+                            <text class="lab">充电电流预警</text>
                         </view>
                         <view class="data-item border-line">
                             <view class="val-box"><text class="val">{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view>
@@ -109,12 +127,12 @@
                         <view class="data-item border-line">
                             <view class="val-box">
                                 <text v-if="state.softLimit && state.softLimit > 0" class="val">
-                                    {{ (state.softLimit / 10).toFixed(1) }}
+                                    {{ (state.softLimit / 100).toFixed(2) }}
                                 </text>
                                 <text v-if="state.softLimit && state.softLimit > 0" class="unit">米</text>
                                 <text v-else class="val soft-limit-off">关闭</text>
                             </view>
-                            <text class="lab">距离软限位</text>
+                            <text class="lab">软限位距离</text>
                         </view>
                         <view class="data-item border-line">
                             <view class="val-box">
@@ -198,7 +216,10 @@ const state = reactive({
     pumpStatus: '',
     version: '',
     deviceTime: '00:00:00',
+    batteryLevel: null,
+    chargingCurrent: null,
     deviceCode: '',
+    remarkName: '',
     timeSlots: [],
 });
 
@@ -206,14 +227,16 @@ const pageTitle = ref('设备状态详情');
 const isRefreshing = ref(false);
 
 const handleDeviceNameUpdated = (payload) => {
-    if (payload?.deviceCode === state.deviceCode && payload.deviceName) {
-        pageTitle.value = payload.deviceName;
+    if (payload?.deviceCode === state.deviceCode) {
+        state.remarkName = payload.remarkName || '';
+        pageTitle.value = state.remarkName || state.deviceCode;
     }
 };
 
 onLoad((options) => {
     if (options.name) pageTitle.value = decodeURIComponent(options.name);
     if (options.deviceCode) state.deviceCode = decodeURIComponent(options.deviceCode);
+    if (options.remarkName) state.remarkName = decodeURIComponent(options.remarkName);
 });
 
 onShow(() => {
@@ -239,6 +262,8 @@ const ringGradient = computed(() => {
 });
 
 const progressRotation = computed(() => (percentage.value / 100) * 360);
+
+const formatRealtimeValue = (value) => value === null || value === undefined ? '--' : value;
 
 const sendNetworkCommand = (data, timeout = 10000) => {
     return http.post('/api/devices/command', {
@@ -292,6 +317,11 @@ const parseDeviceResponse = (payload) => {
             if (part.includes('Times:')) state.currentTrip = parseInt(part.split(':')[1]) || 0;
         });
     }
+
+    const batteryMatch = text.match(/(?:^|[|\r\n])BatLevel:\s*(-?\d+(?:\.\d+)?)\s*%?/i);
+    if (batteryMatch) state.batteryLevel = Number(batteryMatch[1]);
+    const currentMatch = text.match(/(?:^|[|\r\n])I_Chg:\s*(-?\d+(?:\.\d+)?)\s*A?/i);
+    if (currentMatch) state.chargingCurrent = Number(currentMatch[1]);
 
     const timeMatch = text.match(/(?:^|[|\r\n])Time:\s*([^|\r\n]+)/i);
     if (timeMatch) state.deviceTime = timeMatch[1].trim();
@@ -370,7 +400,7 @@ const handleAction = (type) => {
     if (type === 'manual') {
         const params = encodeURIComponent(JSON.stringify(state));
         uni.navigateTo({
-            url: `/pages/networkDeviceState/paramsSet?deviceCode=${deviceCode}&name=${encodeURIComponent(pageTitle.value)}&data=${params}`
+            url: `/pages/networkDeviceState/paramsSet?deviceCode=${deviceCode}&remarkName=${encodeURIComponent(state.remarkName)}&data=${params}`
         });
     } else {
         const params = encodeURIComponent(JSON.stringify(state.timeSlots || []));
@@ -476,7 +506,7 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
 .progress-section {
     display: flex;
     justify-content: center;
-    margin-bottom: 42rpx;
+    margin-bottom: 24rpx;
 
     .progress-ring-container {
         position: relative;
@@ -612,6 +642,58 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
             }
         }
     }
+}
+
+.realtime-card {
+    height: 72rpx;
+    margin: 0 0 16rpx;
+    padding: 0 24rpx;
+    display: flex;
+    align-items: center;
+    background: #F7FAFF;
+    border: 1rpx solid rgba(58, 141, 255, 0.12);
+    border-radius: 18rpx;
+    box-sizing: border-box;
+}
+
+.realtime-metric {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+}
+
+.realtime-label {
+    margin-right: 10rpx;
+    font-size: 20rpx;
+    color: #7B8794;
+}
+
+.realtime-value-box {
+    display: flex;
+    align-items: baseline;
+}
+
+.realtime-value {
+    font-size: 28rpx;
+    line-height: 1;
+    font-weight: 800;
+    color: $primary-color;
+    font-variant-numeric: tabular-nums;
+}
+
+.realtime-unit {
+    margin-left: 4rpx;
+    font-size: 19rpx;
+    color: #7B8794;
+}
+
+.realtime-divider {
+    width: 1rpx;
+    height: 28rpx;
+    margin: 0 14rpx;
+    background: rgba(58, 141, 255, 0.15);
 }
 
 .action-grid {

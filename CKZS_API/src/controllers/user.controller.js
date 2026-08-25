@@ -97,22 +97,41 @@ export const UserController = {
   async bindDevice(req, res) {
     let transaction = null;
     try {
-      const { deviceCode } = req.body;
+      const deviceCode = String(req.body.deviceCode || '').trim();
+      const initialName = String(req.body.initialName || '').trim();
       if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
+      if (!initialName) return fail(res, '缺少必填参数: initialName');
+      if (deviceCode.length > 100 || initialName.length > 100) return fail(res, '设备身份信息长度不能超过 100 个字符');
 
       transaction = await sequelize.transaction();
-      let device = await Device.findOne({
+      const deviceByCode = await Device.findOne({
         where: { deviceCode },
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
+      const deviceByInitialName = await Device.findOne({
+        where: { deviceName: initialName },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      let device = deviceByCode || deviceByInitialName;
+
+      if (
+        (deviceByCode && deviceByCode.deviceName !== initialName) ||
+        (deviceByInitialName && deviceByInitialName.deviceCode !== deviceCode) ||
+        (deviceByCode && deviceByInitialName && deviceByCode.id !== deviceByInitialName.id)
+      ) {
+        await transaction.rollback();
+        return fail(res, '设备身份校验失败：IMEI 与初始名称不匹配，设备疑似被拆解', 409);
+      }
 
       // 设备不存在则自动注册（用户通过蓝牙获取 IMEI，物理接触即视为合法）
       if (!device) {
         try {
           device = await Device.create({
             deviceCode,
-            deviceName: deviceCode,
+            deviceName: initialName,
+            remarkName: initialName,
             deviceType: 'dtu',
             status: 0,
             online: 0,
@@ -128,6 +147,10 @@ export const UserController = {
             transaction,
             lock: transaction.LOCK.UPDATE,
           });
+          if (device && device.deviceName !== initialName) {
+            await transaction.rollback();
+            return fail(res, '设备身份校验失败：IMEI 与初始名称不匹配，设备疑似被拆解', 409);
+          }
         }
       }
 
@@ -138,7 +161,13 @@ export const UserController = {
       }
       // 已被当前用户绑定（幂等）
       if (device.userId === req.user.id) {
-        await transaction.rollback();
+        if (!device.remarkName) {
+          device.remarkName = initialName;
+          await device.save({ transaction });
+          await transaction.commit();
+        } else {
+          await transaction.rollback();
+        }
         return success(res, device, '设备已绑定到当前用户');
       }
 
@@ -146,6 +175,7 @@ export const UserController = {
       device.userId = req.user.id;
       device.status = 1;
       device.online = 0;
+      device.remarkName = device.remarkName || initialName;
       device.bindAt = new Date();
       await device.save({ transaction });
       await transaction.commit();
@@ -203,33 +233,37 @@ export const UserController = {
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
-      return paginate(res, { list: rows, total: count, page, pageSize });
+      const list = rows.map((device) => {
+        const data = device.toJSON();
+        data.remarkName = data.remarkName || data.deviceName;
+        return data;
+      });
+      return paginate(res, { list, total: count, page, pageSize });
     } catch (err) {
       return fail(res, err.message);
     }
   },
 
-  // ==================== 修改已绑定设备名称 ====================
-  async updateDeviceName(req, res) {
+  // ==================== 修改已绑定设备备注名称 ====================
+  async updateDeviceRemark(req, res) {
     try {
-      const { deviceCode, deviceName } = req.body;
-      const name = String(deviceName || '').trim();
+      const { deviceCode, remarkName } = req.body;
+      const name = String(remarkName || '').trim();
 
       if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
-      if (!name) return fail(res, '设备名称不能为空');
-      if (name.length > 100) return fail(res, '设备名称不能超过 100 个字符');
+      if (name.length > 100) return fail(res, '备注名称不能超过 100 个字符');
 
       const device = await Device.findOne({
         where: { deviceCode, userId: req.user.id, status: 1 },
       });
       if (!device) return fail(res, '设备不存在或不属于当前用户', 404);
 
-      device.deviceName = name;
+      device.remarkName = name || null;
       await device.save();
 
-      return success(res, device, '设备名称修改成功');
+      return success(res, device, '设备备注名称修改成功');
     } catch (err) {
-      return fail(res, err.message || '设备名称修改失败');
+      return fail(res, err.message || '设备备注名称修改失败');
     }
   },
 

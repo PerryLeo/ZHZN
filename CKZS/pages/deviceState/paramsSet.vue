@@ -12,10 +12,10 @@
             <scroll-view scroll-y class="settings-scroll">
                 <view class="settings-group">
                     <view class="setting-item">
-                        <text class="label">设备名称</text>
+                        <text class="label">备注名称</text>
                         <view class="right-box">
-                            <input class="item-input highlight" v-model="deviceName" placeholder="请输入设备名称"
-                                @blur="handleNameBlur" />
+                            <input class="item-input highlight" v-model="remarkName" placeholder="请输入备注名称"
+                                @blur="handleRemarkNameBlur" />
                         </view>
                     </view>
                 </view>
@@ -57,10 +57,10 @@
 
                 <view class="settings-group">
                     <view class="setting-item">
-                        <text class="label">距离软限位</text>
+                        <text class="label">软限位距离</text>
                         <view class="right-box">
-                            <input class="item-input" v-model="softLimit" type="number"
-                                @blur="handleDataBlur('$7=', softLimit * 10)" />
+                            <input class="item-input" v-model="softLimit" type="number" min="0" max="100" step="0.01"
+                                @blur="handleSoftLimitBlur" />
                             <text class="unit">米</text>
                         </view>
                     </view>
@@ -96,7 +96,7 @@
                         <view class="right-box"><input class="item-input" v-model="chargingTargetVoltage" type="number" @blur="handleDataBlur('$d=', chargingTargetVoltage * 100)" /><text class="unit">V</text></view>
                     </view>
                     <view class="setting-item">
-                        <text class="label">充电电流限制</text>
+                        <text class="label">充电电流预警</text>
                         <view class="right-box"><input class="item-input" v-model="chargingCurrentLimit" type="number" @blur="handleDataBlur('$e=', chargingCurrentLimit * 1000)" /><text class="unit">A</text></view>
                     </view>
                     <view class="setting-item">
@@ -188,8 +188,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
+import http from '@/common/request.js';
+import { TOKEN_KEY } from '@/common/config.js';
 
-const deviceName = ref('未连接设备');
+const initialName = ref('未连接设备');
+const remarkName = ref('');
 const remoteTime = ref('0');
 const nearTime = ref('0');
 const manualTrips = ref('0');
@@ -206,6 +209,7 @@ const autoShutdownTime = ref('0');
 const version = ref('');
 const appVersion = ref('');
 const deviceMac = ref('');
+const deviceCode = ref('');
 const customCmd = ref('');
 
 const responseModalVisible = ref(false);
@@ -217,7 +221,8 @@ const isWaitingSync = ref(false);
 let syncTimeout = null;
 
 onLoad((options) => {
-    if (options.name) deviceName.value = decodeURIComponent(options.name);
+    if (options.initialName) initialName.value = decodeURIComponent(options.initialName);
+    remarkName.value = options.remarkName ? decodeURIComponent(options.remarkName) : initialName.value;
     if (options.data) {
         try {
             const data = JSON.parse(decodeURIComponent(options.data));
@@ -226,7 +231,7 @@ onLoad((options) => {
             manualTrips.value = data.manualTripsVal;
             runMode.value = data.runMode;
             feedTimeout.value = data.feedTimeout;
-            softLimit.value = (data.softLimit / 10).toFixed(1);
+            softLimit.value = (data.softLimit / 100).toFixed(2);
             feedSpeed.value = Number.isInteger(data.feedSpeed / 10) ? data.feedSpeed / 10 : (data.feedSpeed / 10).toFixed(1);
             motorTorque.value = data.motorTorque;
             moveSpeed.value = data.moveSpeed ?? 0;
@@ -236,6 +241,7 @@ onLoad((options) => {
             autoShutdownTime.value = data.autoShutdownTime ?? 0;
             version.value = data.version;
             deviceMac.value = data.mac || '';
+            deviceCode.value = data.deviceCode || '';
         } catch (e) {
             console.error('Data error:', e);
         }
@@ -319,6 +325,15 @@ const handleDataBlur = (header, val) => {
     setDeviceData(header + val + '\n')
 };
 
+const handleSoftLimitBlur = () => {
+    const value = Number(softLimit.value);
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+        uni.showToast({ title: '软限位距离需为0-100米', icon: 'none' });
+        return;
+    }
+    setDeviceData(`$7=${Math.round(value * 100)}\n`);
+};
+
 const handleMoveSpeedBlur = () => {
     const value = Number(moveSpeed.value);
     if (!Number.isFinite(value) || value < 50 || value > 100) {
@@ -371,20 +386,28 @@ const setDeviceData = (cmd) => {
     }
 };
 
-const handleNameBlur = () => {
-    const newName = deviceName.value.trim();
-    if (!newName) {
-        uni.showToast({ title: '名称必填', icon: 'none' });
-        return;
-    }
+const handleRemarkNameBlur = async () => {
+    const newRemarkName = remarkName.value.trim();
     const saved = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
     const index = saved.findIndex(d => d.mac === deviceMac.value);
     if (index !== -1) {
-        saved[index].name = newName;
+        saved[index].remarkName = newRemarkName;
+        saved[index].initialName = saved[index].initialName || initialName.value;
         uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved);
-        uni.$emit('UPDATE_DEVICE_NAME', newName);
-        uni.showToast({ title: '已同步', icon: 'none' });
     }
+    if (deviceCode.value && uni.getStorageSync(TOKEN_KEY)) {
+        try {
+            await http.post('/api/users/updateDeviceRemark', {
+                deviceCode: deviceCode.value,
+                remarkName: newRemarkName,
+            });
+        } catch (error) {
+            uni.showToast({ title: typeof error === 'string' ? error : '备注名称保存失败', icon: 'none' });
+            return;
+        }
+    }
+    uni.$emit('UPDATE_DEVICE_NAME', newRemarkName);
+    uni.showToast({ title: '备注名称已保存', icon: 'none' });
 };
 
 const openModePicker = () => { modeModalVisible.value = true; };

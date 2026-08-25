@@ -39,7 +39,7 @@
 								</view>
 								<view class="device-info">
 									<view class="info-top">
-										<text class="d-name">{{ item.name }}</text>
+										<text class="d-name">{{ item.remarkName || '未知设备' }}</text>
 										<text class="abnormal-tag" v-if="item.isAbnormal">异常</text>
 									</view>
 									<view class="info-bottom">
@@ -83,12 +83,12 @@
 		<view class="custom-modal-mask" :class="{ 'show': editModalVisible }" @click="closeEditModal">
 			<view class="custom-modal" @click.stop :class="{ 'slide-up': editModalVisible }">
 				<view class="modal-header">
-					<text class="modal-title">修改设备名称</text>
+				<text class="modal-title">修改备注名称</text>
 				</view>
 				<view class="modal-body">
 					<view class="input-wrap">
 						<input class="modern-input" v-model="editDeviceName" :focus="editModalVisible"
-							placeholder="请输入新的设备名称" placeholder-style="color: #ccc;" />
+							placeholder="请输入备注名称" placeholder-style="color: #ccc;" />
 					</view>
 				</view>
 				<view class="modal-footer">
@@ -154,8 +154,17 @@ const getSignalColor = (level) => {
 const normalizeMac = (mac) => String(mac || '').replace(/[^0-9A-F]/gi, '').toUpperCase();
 
 const loadSavedDevices = () => {
-	devices.value = (uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || []).map(d => ({
+	const saved = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
+	let hasMigration = false;
+	devices.value = saved.map(d => {
+		if (!d.remarkName) {
+			d.remarkName = d.name || '未知设备';
+			hasMigration = true;
+		}
+		return {
 		name: d.name || '未知设备',
+		initialName: d.initialName || d.name || '未知设备',
+		remarkName: d.remarkName,
 		mac: d.mac,
 		addTime: d.addTime,
 		canConnect: false,
@@ -164,7 +173,9 @@ const loadSavedDevices = () => {
 		signalLevel: 0,
 		signalColor: '#E0E0E0',
 		show: 'none'
-	}));
+		};
+	});
+	if (hasMigration) uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved);
 };
 
 const connectableCount = computed(() => devices.value.filter(d => d.canConnect).length);
@@ -299,7 +310,7 @@ const onSwipeClick = (e, item) => {
 			success: res => {
 				if (res.confirm) {
 					devices.value = devices.value.filter(d => d.mac !== item.mac);
-					uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', devices.value.map(({ name, mac, addTime }) => ({ name, mac, addTime })));
+					uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', devices.value.map(({ name, initialName, remarkName, deviceCode, mac, addTime }) => ({ name, initialName, remarkName, deviceCode, mac, addTime })));
 					uni.showToast({ title: '已删除', icon: 'success' });
 				} else {
 					item.show = 'none';
@@ -308,7 +319,7 @@ const onSwipeClick = (e, item) => {
 		});
 	} else if (e.index === 0) {
 		editingItem.value = item;
-		editDeviceName.value = item.name;
+		editDeviceName.value = item.remarkName || '';
 		editModalVisible.value = true;
 		item.show = 'none';
 	}
@@ -321,22 +332,20 @@ const closeEditModal = () => {
 
 const confirmEdit = () => {
 	const newName = editDeviceName.value.trim();
-	if (!newName) return uni.showToast({ title: '名称必填', icon: 'none' });
-
 	const match = devices.value.find(d => d.mac === editingItem.value.mac);
 	if (match) {
-		match.name = newName;
-		match.isAbnormal = newName.startsWith('HF-SPP') || newName.startsWith('JDY');
+		match.remarkName = newName;
 	}
 
 	const saved = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
 	const sItem = saved.find(d => d.mac === editingItem.value.mac);
 	if (sItem) {
-		sItem.name = newName;
+		sItem.remarkName = newName;
+		sItem.initialName = sItem.initialName || sItem.name;
 		uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved);
 	}
 
-	uni.showToast({ title: '修改成功', icon: 'success' });
+	uni.showToast({ title: '备注名称已保存', icon: 'success' });
 	closeEditModal();
 };
 
@@ -364,7 +373,7 @@ const toDeviceDetail = item => {
 			if (!socket.isConnected()) throw new Error('Socket 未连接');
 
 			getApp().globalData.sppSocket = socket;
-			uni.navigateTo({ url: `/pages/deviceState/index?name=${encodeURIComponent(item.name)}&mac=${item.mac}` });
+				uni.navigateTo({ url: `/pages/deviceState/index?name=${encodeURIComponent(item.remarkName || '未知设备')}&initialName=${encodeURIComponent(item.initialName || item.name)}&remarkName=${encodeURIComponent(item.remarkName || '')}&mac=${item.mac}` });
 		} catch (e) {
 			console.error('[蓝牙连接失败]', e);
 			try { socket?.close(); } catch (closeError) { }

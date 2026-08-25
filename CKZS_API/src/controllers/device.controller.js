@@ -124,7 +124,7 @@ export const DeviceController = {
       }
 
       const settled = await Promise.allSettled(
-        uniqueCodes.map(deviceCode => mqttService.publishRawCommandAndWait(deviceCode, '$b\n', timeout))
+        uniqueCodes.map(deviceCode => mqttService.publishRawCommandAndWait(deviceCode, '$c\n', timeout))
       );
       const results = settled.map((result, index) => {
         const deviceCode = uniqueCodes[index];
