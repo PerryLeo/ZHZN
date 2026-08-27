@@ -14,9 +14,7 @@ const getRawField = (rawData, field) => {
 const buildStatusPayloadValidator = (expectedDevice) => (payload) => {
   const rawData = typeof payload === 'string' ? payload : '';
   const imei = getRawField(rawData, 'IMEI');
-  const name = getRawField(rawData, 'Name');
-  return imei === String(expectedDevice.deviceCode).trim()
-    && name === String(expectedDevice.deviceName || '').trim();
+  return imei === String(expectedDevice.deviceCode).trim();
 };
 
 export const DeviceController = {
@@ -130,7 +128,7 @@ export const DeviceController = {
           deviceCode: { [Op.in]: uniqueCodes },
           ...(isAdmin ? {} : { status: 1, userId: req.user.id }),
         },
-        attributes: ['deviceCode', 'deviceName'],
+        attributes: ['deviceCode'],
       });
       if (allowedDevices.length !== uniqueCodes.length) {
         return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
