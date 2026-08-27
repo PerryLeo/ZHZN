@@ -62,7 +62,7 @@
         @keydown.enter="openDeviceDetail(device)"
       >
         <span class="device-thumb modal-device-thumb" aria-hidden="true"><AppIcon name="device" :size="20" /></span>
-        <div><strong>{{ device.remarkName || device.deviceName || device.deviceCode }}</strong><span>{{ device.deviceCode }}</span></div>
+        <div><strong>{{ device.remarkName || '--' }}</strong><span>{{ device.deviceCode }}</span></div>
         <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>
       </div>
     </div>

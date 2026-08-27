@@ -23,7 +23,7 @@
         <div class="panel-body activity-list">
           <div v-for="item in data.recentDevices" :key="item.id" class="activity-item">
             <i class="status-dot" :class="{ online: item.online === 1 }"></i>
-            <div class="activity-info"><strong>{{ item.remarkName || item.deviceName || item.deviceCode }}</strong><span>{{ item.owner?.username || '未绑定用户' }}</span></div>
+            <div class="activity-info"><strong>{{ item.remarkName || '--' }}</strong><span>{{ item.owner?.username || '未绑定用户' }}</span></div>
             <span class="activity-time">{{ formatTime(item.updatedAt) }}</span>
           </div>
           <div v-if="!data.recentDevices.length" class="empty-state">暂无设备数据</div>

@@ -26,10 +26,10 @@
 
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>设备信息</th><th>设备类型</th><th>所属用户</th><th>在线状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>设备类型</th><th>所属用户</th><th>在线状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody>
-        <tr v-if="loading"><td colspan="7" class="empty-state">数据加载中...</td></tr>
-        <tr v-else-if="!pageData.list.length"><td colspan="7" class="empty-state">暂无符合条件的设备</td></tr>
+        <tr v-if="loading"><td colspan="8" class="empty-state">数据加载中...</td></tr>
+        <tr v-else-if="!pageData.list.length"><td colspan="8" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
           <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': item.online === 1 && !item.onlineChecking, 'device-row-disabled': item.online !== 1 || item.onlineChecking }" @click="openDetail(item)">
             <td>
@@ -42,9 +42,10 @@
                   </svg>
                   <i :class="{ online: item.online === 1, checking: item.onlineChecking }"></i>
                 </span>
-                <div><strong>{{ item.remarkName || item.deviceName || item.deviceCode }}</strong><span>{{ item.deviceCode }}</span></div>
+                <div><strong>{{ item.remarkName || '--' }}</strong><span>{{ item.deviceCode }}</span></div>
               </div>
             </td>
+            <td>{{ item.deviceName || '--' }}</td>
             <td>{{ typeLabel(item.deviceType) }}</td><td>{{ item.owner?.username || '--' }}</td>
             <td><span class="tag" :class="item.onlineChecking ? 'checking' : item.online === 1 ? 'success' : 'danger'">{{ item.onlineChecking ? '检测中' : item.online === 1 ? '在线' : '离线' }}</span></td>
             <td><span class="tag" :class="item.status === 1 ? 'success' : 'neutral'">{{ item.status === 1 ? '已绑定' : '未绑定' }}</span></td>
@@ -64,16 +65,16 @@
   </AppModal>
 
   <AppModal v-model="bindModal.visible" title="分配设备" confirm-text="确认分配" :loading="submitting" @confirm="bindDevice">
-    <p class="confirm-copy">为设备 <strong>{{ bindModal.device?.remarkName || bindModal.device?.deviceName || bindModal.device?.deviceCode }}</strong> 选择平台所属用户，APP 与 PC 端将同步显示。</p>
+    <p class="confirm-copy">为设备 <strong>{{ bindModal.device?.remarkName || '--' }}</strong> 选择平台所属用户，APP 与 PC 端将同步显示。</p>
     <div class="form-field bind-user-field"><label>目标用户</label><select v-model.number="bindUserId" class="form-control"><option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}（{{ user.deviceCount }} 台设备）</option></select></div>
   </AppModal>
 
   <AppModal v-model="unbindModal.visible" title="解绑设备" confirm-text="确认操作" danger :loading="submitting" @confirm="unbindDevice">
-    <p class="confirm-copy">确认解除 <strong>{{ unbindModal.device?.remarkName || unbindModal.device?.deviceName || unbindModal.device?.deviceCode }}</strong> 与用户 <strong>{{ unbindModal.device?.owner?.username }}</strong> 的绑定吗？APP 将同步失去该设备。</p>
+    <p class="confirm-copy">确认解除 <strong>{{ unbindModal.device?.remarkName || '--' }}</strong> 与用户 <strong>{{ unbindModal.device?.owner?.username }}</strong> 的绑定吗？APP 将同步失去该设备。</p>
   </AppModal>
 
   <AppModal v-model="deleteModal.visible" title="删除设备" confirm-text="确认删除" danger :loading="submitting" @confirm="deleteDevice">
-    <p class="confirm-copy">确认永久删除设备 <strong>{{ deleteModal.device?.remarkName || deleteModal.device?.deviceName || deleteModal.device?.deviceCode }}</strong> 吗？设备资料删除后无法恢复。</p>
+    <p class="confirm-copy">确认永久删除设备 <strong>{{ deleteModal.device?.remarkName || '--' }}</strong> 吗？设备资料删除后无法恢复。</p>
   </AppModal>
 
   <AppModal v-model="groupModal.visible" title="新建设备分组" confirm-text="创建分组" :loading="groupModal.submitting" @confirm="createDeviceGroup">
@@ -95,7 +96,7 @@
           <i :class="{ online: device.online === 1 }"></i>
         </span>
         <span class="group-device-copy">
-          <strong>{{ device.remarkName || device.deviceName || device.deviceCode }}</strong>
+          <strong>{{ device.remarkName || '--' }}</strong>
           <small>{{ device.deviceCode }} · {{ device.owner?.username || '暂无所属用户' }}</small>
         </span>
         <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>

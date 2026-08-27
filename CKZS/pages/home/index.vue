@@ -86,7 +86,7 @@
           <view class="bound-grid" v-if="!boundLoading && filteredBoundDevices.length > 0">
             <view
               class="bound-card"
-              :class="{ 'is-disabled': item.statusLoading || item.online !== 1 }"
+              :class="{ 'is-disabled': item.statusLoading || item.online !== 1 || item.identityMismatch }"
               v-for="item in filteredBoundDevices"
               :key="item.id"
               @click="toBoundDevice(item)"
@@ -104,7 +104,7 @@
                   <view
                     class="device-action-button"
                     :class="{
-                      disabled: item.online !== 1 || item.statusLoading || item.switchLoading || item.runState === 'unknown' || item.runState === 'returning'
+                      disabled: item.online !== 1 || item.statusLoading || item.switchLoading || item.identityMismatch || item.runState === 'unknown' || item.runState === 'returning'
                     }"
                     @click.stop="handleDeviceAction(item)"
                   >
@@ -317,6 +317,8 @@ const DEVICE_PAGE_SIZE = 10;
 const boundDevices = ref([]);
 const boundLoading = ref(false);
 const batchCommandLoading = ref(false);
+const manualRefreshLoading = ref(false);
+let boundStatusQueue = Promise.resolve();
 const boundPage = ref(1);
 const boundTotal = ref(0);
 const allBoundTotal = ref(0);
@@ -564,42 +566,60 @@ const fetchBoundDeviceStatuses = async (devices) => {
   currentDevices.forEach(device => {
     device.statusLoading = true;
     device.statusError = '';
+    device.identityMismatch = false;
+    if (device.abnormalStatus === '设备身份异常') {
+      device.abnormalStatus = '--';
+      device.hasAlarm = false;
+    }
   });
 
-  try {
-    const result = await http.post('/api/devices/batchQueryStatus', {
-      deviceCodes: currentDevices.map(device => device.deviceCode),
-      timeout: 5000
-    }, { timeout: 8000 });
-    const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
+  const queryStatus = async () => {
+    try {
+      const result = await http.post('/api/devices/batchQueryStatus', {
+        deviceCodes: currentDevices.map(device => device.deviceCode),
+        timeout: 5000
+      }, { timeout: 8000 });
+      const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
 
-    currentDevices.forEach(device => {
-      const status = statusMap.get(device.deviceCode);
-      if (!status?.success) {
-        device.online = 0;
-        device.statusError = status?.error || '设备状态获取失败';
-        return;
-      }
-      device.online = 1;
-      const metrics = parseDeviceMetrics(status);
-      device.battery = metrics.battery;
-      device.current = metrics.current;
-      device.abnormalStatus = metrics.abnormalStatus;
-      device.hasAlarm = metrics.hasAlarm;
-      device.runState = metrics.runState;
-      device.runStateLabel = metrics.runStateLabel;
-      device.rawStatusData = metrics.rawData;
-      device.statusTimestamp = metrics.timestamp;
-    });
-  } catch (error) {
-    currentDevices.forEach(device => {
-      device.statusError = typeof error === 'string' ? error : '设备状态获取失败';
-    });
-  } finally {
-    currentDevices.forEach(device => {
-      device.statusLoading = false;
-    });
-  }
+      currentDevices.forEach(device => {
+        const status = statusMap.get(device.deviceCode);
+        if (!status?.success) {
+          device.identityMismatch = Boolean(status?.identityMismatch);
+          device.online = device.identityMismatch ? 1 : 0;
+          device.statusError = status?.error || '设备状态获取失败';
+          if (device.identityMismatch) {
+            device.abnormalStatus = '设备身份异常';
+            device.hasAlarm = true;
+            device.runState = 'unknown';
+            device.runStateLabel = '身份异常';
+          }
+          return;
+        }
+        device.online = 1;
+        const metrics = parseDeviceMetrics(status);
+        device.battery = metrics.battery;
+        device.current = metrics.current;
+        device.abnormalStatus = metrics.abnormalStatus;
+        device.hasAlarm = metrics.hasAlarm;
+        device.runState = metrics.runState;
+        device.runStateLabel = metrics.runStateLabel;
+        device.rawStatusData = metrics.rawData;
+        device.statusTimestamp = metrics.timestamp;
+      });
+    } catch (error) {
+      currentDevices.forEach(device => {
+        device.statusError = typeof error === 'string' ? error : '设备状态获取失败';
+      });
+    } finally {
+      currentDevices.forEach(device => {
+        device.statusLoading = false;
+      });
+    }
+  };
+
+  const request = boundStatusQueue.then(queryStatus, queryStatus);
+  boundStatusQueue = request.catch(() => {});
+  return request;
 };
 
 const getDeviceActionLabel = (device) => {
@@ -610,6 +630,10 @@ const getDeviceActionLabel = (device) => {
 };
 
 const handleDeviceAction = async (device) => {
+  if (device.identityMismatch) {
+    uni.showToast({ title: '设备身份异常，暂不可操作', icon: 'none' });
+    return;
+  }
   if (device.online !== 1) {
     uni.showToast({ title: '设备离线，无法操作', icon: 'none' });
     return;
@@ -691,6 +715,7 @@ const fetchBoundDevices = async ({ throwOnError = false, refreshSummaryAfterStat
       current: null,
       abnormalStatus: '--',
       hasAlarm: false,
+      identityMismatch: false,
       statusLoading: true,
       statusError: '',
       rawStatusData: '',
@@ -1006,28 +1031,32 @@ const goMine = () => { uni.navigateTo({ url: '/pages/mine/index' }); };
 const addDevice = () => { stopSilentScan(); uni.navigateTo({ url: '/pages/index/bluetooth' }); };
 
 const handleManualRefresh = () => {
+  if (manualRefreshLoading.value) return;
+  manualRefreshLoading.value = true;
   uni.showLoading({ title: '正在刷新...', mask: true });
   stopSilentScan();
   try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) { }
   devices.value = [];
   setTimeout(async () => {
-    loadSavedDevices();
-    // 关闭旧连接，释放设备让其恢复广播
-    try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) { }
-    startSilentScan();
-    const results = await Promise.allSettled([
-      fetchBoundDevices({ throwOnError: true, refreshSummaryAfterStatus: false }),
-      fetchDeviceSummary(true),
-      fetchDeviceGroups(true),
-    ]);
-    const failedNames = ['设备列表', '设备统计', '设备分组'].filter((name, index) => results[index].status === 'rejected');
-
-    uni.hideLoading();
-    if (failedNames.length === 0) {
-      uni.showToast({ title: '刷新成功', icon: 'success' });
-      return;
+    try {
+      loadSavedDevices();
+      // 关闭旧连接，释放设备让其恢复广播
+      try { getApp().globalData?.sppSocket?.close(); getApp().globalData.sppSocket = null; } catch (e) { }
+      startSilentScan();
+      const results = await Promise.allSettled([
+        fetchBoundDevices({ throwOnError: true, refreshSummaryAfterStatus: false }),
+        fetchDeviceSummary(true),
+        fetchDeviceGroups(true),
+      ]);
+      const failedNames = ['设备列表', '设备统计', '设备分组'].filter((name, index) => results[index].status === 'rejected');
+      if (failedNames.length === 0) uni.showToast({ title: '刷新成功', icon: 'success' });
+      else uni.showToast({ title: `${failedNames.join('、')}刷新失败`, icon: 'none' });
+    } catch (error) {
+      uni.showToast({ title: '刷新失败', icon: 'none' });
+    } finally {
+      uni.hideLoading();
+      manualRefreshLoading.value = false;
     }
-    uni.showToast({ title: `${failedNames.join('、')}刷新失败`, icon: 'none' });
   }, 500);
 };
 
@@ -1092,6 +1121,10 @@ const toBoundDevice = (item) => {
   }
   if (item?.online !== 1) {
     uni.showToast({ title: '设备离线，无法进入详情', icon: 'none' });
+    return;
+  }
+  if (item?.identityMismatch) {
+    uni.showToast({ title: '设备身份异常，暂不可进入详情', icon: 'none' });
     return;
   }
   if (!item?.deviceCode) {

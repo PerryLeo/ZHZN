@@ -153,12 +153,13 @@ export const DeviceController = {
         return {
           deviceCode,
           success: false,
+          identityMismatch: result.reason?.code === 'IDENTITY_MISMATCH',
           error: result.reason?.message || '设备状态查询失败',
         };
       });
       const successCount = results.filter(item => item.success).length;
-      const onlineCodes = results.filter(item => item.success).map(item => item.deviceCode);
-      const offlineCodes = results.filter(item => !item.success).map(item => item.deviceCode);
+      const onlineCodes = results.filter(item => item.success || item.identityMismatch).map(item => item.deviceCode);
+      const offlineCodes = results.filter(item => !item.success && !item.identityMismatch).map(item => item.deviceCode);
 
       const onlineUpdates = [];
       if (onlineCodes.length > 0) {

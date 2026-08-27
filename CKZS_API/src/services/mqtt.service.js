@@ -98,7 +98,13 @@ class MqttService {
       const queue = pendingRawCommands.get(deviceCode);
       const pending = queue[0];
       if (pending?.validate && !pending.validate(payload)) {
+        queue.shift();
+        if (queue.length === 0) pendingRawCommands.delete(deviceCode);
+        clearTimeout(pending.timer);
         console.warn('⚠️ [透传回执身份校验失败] '+deviceCode+':', typeof payload === 'string' ? payload.slice(0, 200) : JSON.stringify(payload));
+        const error = new Error('设备身份异常：回包 IMEI 与当前设备不一致');
+        error.code = 'IDENTITY_MISMATCH';
+        pending.reject(error);
         return;
       }
       queue.shift();
