@@ -388,10 +388,10 @@ components:
         application/json:
           schema:
             type: object
-            required: [deviceCode, initialName]
+            required: [deviceCode, deviceName]
             properties:
               deviceCode: { type: string, maxLength: 100, description: 设备 IMEI 或设备编码 }
-              initialName: { type: string, maxLength: 100, description: 设备初始名称 }
+              deviceName: { type: string, maxLength: 100, description: 硬件不可修改的设备名称 }
     DeviceCodeRequest:
       required: true
       content:

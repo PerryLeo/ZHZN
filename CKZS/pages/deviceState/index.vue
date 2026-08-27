@@ -361,7 +361,7 @@ const bindDeviceByIdentity = async () => {
     try {
         const device = await http.post('/api/users/bindDevice', {
             deviceCode: state.deviceCode,
-            initialName: state.initialName,
+            deviceName: state.initialName,
         });
         state.remarkName = device?.remarkName || state.initialName;
         pageTitle.value = state.remarkName;

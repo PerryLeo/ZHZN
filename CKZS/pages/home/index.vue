@@ -273,7 +273,7 @@
                 <text class="iconfont icon-online"></text>
               </view>
               <view class="group-device-info">
-                <text class="group-device-name">{{ device.deviceName || device.deviceCode }}</text>
+                <text class="group-device-name">{{ device.remarkName || device.deviceName || device.deviceCode }}</text>
                 <text class="group-device-code">{{ device.deviceCode }}</text>
               </view>
               <view class="group-device-check" :class="{ checked: isGroupDeviceSelected(device.id) }">

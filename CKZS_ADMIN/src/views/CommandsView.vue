@@ -6,7 +6,7 @@
       <div class="device-selector">
         <label v-for="item in devices" :key="item.id" class="select-device" :class="{ selected: selectedCode === item.deviceCode }">
           <input v-model="selectedCode" class="command-device-checkbox" type="radio" name="command-target-device" :value="item.deviceCode">
-          <span><strong>{{ item.deviceName || item.deviceCode }}</strong><span>{{ item.deviceCode }} · {{ item.owner?.username || '未分配用户' }}</span></span>
+          <span><strong>{{ item.remarkName || item.deviceName || item.deviceCode }}</strong><span>{{ item.deviceCode }} · {{ item.owner?.username || '未分配用户' }}</span></span>
           <span class="tag" :class="item.online === 1 ? 'success' : 'danger'">{{ item.online === 1 ? '在线' : '离线' }}</span>
         </label>
         <div v-if="!devices.length" class="empty-state">暂无已绑定设备</div>

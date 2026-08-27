@@ -16,7 +16,7 @@
         </span>
         <div class="detail-identity">
           <div class="detail-title-row">
-            <h2>{{ device.deviceName || device.deviceCode }}</h2>
+          <h2>{{ device.remarkName || device.deviceName || device.deviceCode }}</h2>
             <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>
             <span class="tag" :class="isBound ? 'success' : 'neutral'">{{ isBound ? '已绑定' : '未绑定' }}</span>
           </div>
@@ -146,7 +146,7 @@
     </template>
 
     <AppModal v-model="unbindModalVisible" title="解绑设备" confirm-text="确认解绑" danger :loading="unbinding" @confirm="unbindDevice">
-      <p class="confirm-copy">确认解除 <strong>{{ device.deviceName || device.deviceCode }}</strong> 与用户 <strong>{{ device.owner?.username || '--' }}</strong> 的绑定吗？解绑后 APP 将同步移除该设备。</p>
+      <p class="confirm-copy">确认解除 <strong>{{ device.remarkName || device.deviceName || device.deviceCode }}</strong> 与用户 <strong>{{ device.owner?.username || '--' }}</strong> 的绑定吗？解绑后 APP 将同步移除该设备。</p>
     </AppModal>
   </div>
 </template>

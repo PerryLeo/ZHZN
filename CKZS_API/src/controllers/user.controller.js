@@ -98,10 +98,11 @@ export const UserController = {
     let transaction = null;
     try {
       const deviceCode = String(req.body.deviceCode || '').trim();
-      const initialName = String(req.body.initialName || '').trim();
+      // deviceName 是硬件返回的不可修改设备名称；initialName 仅兼容旧版 App。
+      const deviceName = String(req.body.deviceName || req.body.initialName || '').trim();
       if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
-      if (!initialName) return fail(res, '缺少必填参数: initialName');
-      if (deviceCode.length > 100 || initialName.length > 100) return fail(res, '设备身份信息长度不能超过 100 个字符');
+      if (!deviceName) return fail(res, '缺少必填参数: deviceName');
+      if (deviceCode.length > 100 || deviceName.length > 100) return fail(res, '设备身份信息长度不能超过 100 个字符');
 
       transaction = await sequelize.transaction();
       const deviceByCode = await Device.findOne({
@@ -109,47 +110,56 @@ export const UserController = {
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
-      const deviceByInitialName = await Device.findOne({
-        where: { deviceName: initialName },
+      const deviceByName = await Device.findOne({
+        where: { deviceName },
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
-      let device = deviceByCode || deviceByInitialName;
+      let device = deviceByCode || deviceByName;
 
       if (
-        (deviceByCode && deviceByCode.deviceName !== initialName) ||
-        (deviceByInitialName && deviceByInitialName.deviceCode !== deviceCode) ||
-        (deviceByCode && deviceByInitialName && deviceByCode.id !== deviceByInitialName.id)
+        (deviceByCode && deviceByCode.deviceName !== deviceName) ||
+        (deviceByName && deviceByName.deviceCode !== deviceCode) ||
+        (deviceByCode && deviceByName && deviceByCode.id !== deviceByName.id)
       ) {
         await transaction.rollback();
-        return fail(res, '设备身份校验失败：IMEI 与初始名称不匹配，设备疑似被拆解', 409);
+        return fail(res, '设备身份校验失败：IMEI 与设备名称不匹配，设备可能已更换4G模块', 409);
       }
 
-      // 设备不存在则自动注册（用户通过蓝牙获取 IMEI，物理接触即视为合法）
+      // 设备不存在则用不可变的硬件名称与 IMEI 创建唯一身份对。
       if (!device) {
         try {
           device = await Device.create({
             deviceCode,
-            deviceName: initialName,
-            remarkName: initialName,
+            deviceName,
+            remarkName: deviceName,
             deviceType: 'dtu',
             status: 0,
             online: 0,
           }, { transaction });
         } catch (error) {
-          // 两个用户首次绑定同一 IMEI 时，唯一索引会让后一个创建失败；
-          // 回滚后重新加锁读取已创建的设备，再按归属规则判断。
+          // 两个请求同时首次绑定相同 IMEI 或设备名称时，唯一索引会让后一个创建失败；
+          // 回滚后重新按完整身份对加锁读取，再继续后续归属校验。
           if (error.name !== 'SequelizeUniqueConstraintError') throw error;
           await transaction.rollback();
           transaction = await sequelize.transaction();
-          device = await Device.findOne({
+          const retryDeviceByCode = await Device.findOne({
             where: { deviceCode },
             transaction,
             lock: transaction.LOCK.UPDATE,
           });
-          if (device && device.deviceName !== initialName) {
+          const retryDeviceByName = await Device.findOne({
+            where: { deviceName },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+          });
+          device = retryDeviceByCode || retryDeviceByName;
+          if (!device ||
+            (retryDeviceByCode && retryDeviceByCode.deviceName !== deviceName) ||
+            (retryDeviceByName && retryDeviceByName.deviceCode !== deviceCode) ||
+            (retryDeviceByCode && retryDeviceByName && retryDeviceByCode.id !== retryDeviceByName.id)) {
             await transaction.rollback();
-            return fail(res, '设备身份校验失败：IMEI 与初始名称不匹配，设备疑似被拆解', 409);
+            return fail(res, '设备身份校验失败：IMEI 与设备名称不匹配，设备可能已更换4G模块', 409);
           }
         }
       }
@@ -162,7 +172,7 @@ export const UserController = {
       // 已被当前用户绑定（幂等）
       if (device.userId === req.user.id) {
         if (!device.remarkName) {
-          device.remarkName = initialName;
+          device.remarkName = deviceName;
           await device.save({ transaction });
           await transaction.commit();
         } else {
@@ -175,7 +185,7 @@ export const UserController = {
       device.userId = req.user.id;
       device.status = 1;
       device.online = 0;
-      device.remarkName = device.remarkName || initialName;
+      device.remarkName = device.remarkName || deviceName;
       device.bindAt = new Date();
       await device.save({ transaction });
       await transaction.commit();

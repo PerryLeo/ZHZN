@@ -6,7 +6,7 @@ import { success, fail } from '../utils/response.js';
 const groupInclude = (userId, isAdmin = false) => ({
   model: Device,
   as: 'devices',
-  attributes: ['id', 'deviceCode', 'deviceName', 'online'],
+    attributes: ['id', 'deviceCode', 'deviceName', 'remarkName', 'online'],
   where: {
     status: 1,
     ...(isAdmin ? {} : { userId }),

@@ -42,7 +42,7 @@
                   </svg>
                   <i :class="{ online: item.online === 1, checking: item.onlineChecking }"></i>
                 </span>
-                <div><strong>{{ item.deviceName || item.deviceCode }}</strong><span>{{ item.deviceCode }}</span></div>
+                <div><strong>{{ item.remarkName || item.deviceName || item.deviceCode }}</strong><span>{{ item.deviceCode }}</span></div>
               </div>
             </td>
             <td>{{ typeLabel(item.deviceType) }}</td><td>{{ item.owner?.username || '--' }}</td>
@@ -64,16 +64,16 @@
   </AppModal>
 
   <AppModal v-model="bindModal.visible" title="分配设备" confirm-text="确认分配" :loading="submitting" @confirm="bindDevice">
-    <p class="confirm-copy">为设备 <strong>{{ bindModal.device?.deviceName || bindModal.device?.deviceCode }}</strong> 选择平台所属用户，APP 与 PC 端将同步显示。</p>
+    <p class="confirm-copy">为设备 <strong>{{ bindModal.device?.remarkName || bindModal.device?.deviceName || bindModal.device?.deviceCode }}</strong> 选择平台所属用户，APP 与 PC 端将同步显示。</p>
     <div class="form-field bind-user-field"><label>目标用户</label><select v-model.number="bindUserId" class="form-control"><option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}（{{ user.deviceCount }} 台设备）</option></select></div>
   </AppModal>
 
   <AppModal v-model="unbindModal.visible" title="解绑设备" confirm-text="确认操作" danger :loading="submitting" @confirm="unbindDevice">
-    <p class="confirm-copy">确认解除 <strong>{{ unbindModal.device?.deviceName || unbindModal.device?.deviceCode }}</strong> 与用户 <strong>{{ unbindModal.device?.owner?.username }}</strong> 的绑定吗？APP 将同步失去该设备。</p>
+    <p class="confirm-copy">确认解除 <strong>{{ unbindModal.device?.remarkName || unbindModal.device?.deviceName || unbindModal.device?.deviceCode }}</strong> 与用户 <strong>{{ unbindModal.device?.owner?.username }}</strong> 的绑定吗？APP 将同步失去该设备。</p>
   </AppModal>
 
   <AppModal v-model="deleteModal.visible" title="删除设备" confirm-text="确认删除" danger :loading="submitting" @confirm="deleteDevice">
-    <p class="confirm-copy">确认永久删除设备 <strong>{{ deleteModal.device?.deviceName || deleteModal.device?.deviceCode }}</strong> 吗？设备资料删除后无法恢复。</p>
+    <p class="confirm-copy">确认永久删除设备 <strong>{{ deleteModal.device?.remarkName || deleteModal.device?.deviceName || deleteModal.device?.deviceCode }}</strong> 吗？设备资料删除后无法恢复。</p>
   </AppModal>
 
   <AppModal v-model="groupModal.visible" title="新建设备分组" confirm-text="创建分组" :loading="groupModal.submitting" @confirm="createDeviceGroup">
@@ -95,7 +95,7 @@
           <i :class="{ online: device.online === 1 }"></i>
         </span>
         <span class="group-device-copy">
-          <strong>{{ device.deviceName || device.deviceCode }}</strong>
+          <strong>{{ device.remarkName || device.deviceName || device.deviceCode }}</strong>
           <small>{{ device.deviceCode }} · {{ device.owner?.username || '暂无所属用户' }}</small>
         </span>
         <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>
