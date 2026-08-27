@@ -96,7 +96,12 @@ class MqttService {
     // 优先检查是否有透传指令在等这台设备的回复
     if (pendingRawCommands.has(deviceCode)) {
       const queue = pendingRawCommands.get(deviceCode);
-      const pending = queue.shift();
+      const pending = queue[0];
+      if (pending?.validate && !pending.validate(payload)) {
+        console.warn('⚠️ [透传回执身份校验失败] '+deviceCode+':', typeof payload === 'string' ? payload.slice(0, 200) : JSON.stringify(payload));
+        return;
+      }
+      queue.shift();
       if (queue.length === 0) pendingRawCommands.delete(deviceCode);
       if (pending) {
         clearTimeout(pending.timer);
@@ -180,7 +185,7 @@ class MqttService {
    * @param {string} rawData     要发送的原始字符串，如 "$b"
    * @param {number} timeoutMs   等待超时（毫秒）
    */
-  publishRawCommandAndWait(deviceCode, rawData, timeoutMs = 10000) {
+  publishRawCommandAndWait(deviceCode, rawData, timeoutMs = 10000, validatePayload = null) {
     if (!this.connected || !this.client) throw new Error('MQTT 未连接');
     const topic = MQTT_TOPIC.COMMAND_DOWN(deviceCode);
 
@@ -205,7 +210,7 @@ class MqttService {
 
       // 入队（用固定 key，与 _handleDataUp 一致）
       if (!pendingRawCommands.has(queueKey)) pendingRawCommands.set(queueKey, []);
-      pendingRawCommands.get(queueKey).push({ resolve, reject, timer });
+      pendingRawCommands.get(queueKey).push({ resolve, reject, timer, validate: validatePayload });
 
       // 发送纯文本
       this.client.publish(topic, rawData, { qos: 1 }, (err) => {

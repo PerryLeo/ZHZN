@@ -6,6 +6,19 @@ import mqttService from '../services/mqtt.service.js';
 const BATCH_CONCURRENCY = 50;
 const STATUS_QUERY_LIMIT = 10;
 
+const getRawField = (rawData, field) => {
+  const match = String(rawData || '').match(new RegExp('(?:^|[|\\r\\n])\\s*' + field + '\\s*:\\s*([^|\\r\\n]+)', 'i'));
+  return match ? match[1].trim() : '';
+};
+
+const buildStatusPayloadValidator = (expectedDevice) => (payload) => {
+  const rawData = typeof payload === 'string' ? payload : '';
+  const imei = getRawField(rawData, 'IMEI');
+  const name = getRawField(rawData, 'Name');
+  return imei === String(expectedDevice.deviceCode).trim()
+    && name === String(expectedDevice.deviceName || '').trim();
+};
+
 export const DeviceController = {
   async sendCommand(req, res) {
     try {
@@ -117,14 +130,22 @@ export const DeviceController = {
           deviceCode: { [Op.in]: uniqueCodes },
           ...(isAdmin ? {} : { status: 1, userId: req.user.id }),
         },
-        attributes: ['deviceCode'],
+        attributes: ['deviceCode', 'deviceName'],
       });
       if (allowedDevices.length !== uniqueCodes.length) {
         return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
       }
 
       const settled = await Promise.allSettled(
-        uniqueCodes.map(deviceCode => mqttService.publishRawCommandAndWait(deviceCode, '$c\n', timeout))
+        uniqueCodes.map(deviceCode => {
+          const device = allowedDevices.find(item => item.deviceCode === deviceCode);
+          return mqttService.publishRawCommandAndWait(
+            deviceCode,
+            '$c\n',
+            timeout,
+            buildStatusPayloadValidator(device)
+          );
+        })
       );
       const results = settled.map((result, index) => {
         const deviceCode = uniqueCodes[index];

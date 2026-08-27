@@ -44,10 +44,21 @@
                 </view>
                 <view class="realtime-divider"></view>
                 <view class="realtime-metric">
-                    <text class="realtime-label">充电电流</text>
+                    <text class="realtime-label">电流</text>
                     <view class="realtime-value-box">
                         <text class="realtime-value">{{ formatRealtimeValue(state.chargingCurrent) }}</text>
                         <text v-if="state.chargingCurrent !== null" class="realtime-unit">A</text>
+                    </view>
+                </view>
+                <view class="realtime-divider"></view>
+                <view class="realtime-control">
+                    <text class="realtime-control-label">设备操作</text>
+                    <view
+                        class="realtime-control-button"
+                        :class="{ disabled: state.controlLoading || state.controlState === 'unknown' || state.controlState === 'returning' }"
+                        @click="handleDeviceControl"
+                    >
+                        <text>{{ getDeviceControlLabel() }}</text>
                     </view>
                 </view>
             </view>
@@ -219,6 +230,9 @@ const state = reactive({
     deviceTime: '00:00:00',
     batteryLevel: null,
     chargingCurrent: null,
+    controlState: 'unknown',
+    controlStateLabel: '状态未知',
+    controlLoading: false,
     mac: '',
     deviceCode: '',
     initialName: '',
@@ -421,9 +435,21 @@ const formatDeviceStatus = (status) => {
         Unreturn: '刚上电，未归位',
         Pause: '暂停',
         Idle: '空闲',
+        Returning: '归位中',
         running: '运行中'
     };
     return statusMap[value] || value || '未知';
+};
+
+const parseControlState = (status) => {
+    const value = String(status || '').trim();
+    const matched = value.match(/^(Unreturn|Pause|Waiting|Running|Returning|Return|Idle)(?=$|[\s(:])/i);
+    const keyword = matched ? matched[1].toLowerCase() : '';
+    if (keyword === 'pause') return { state: 'paused', label: '暂停' };
+    if (keyword === 'waiting' || keyword === 'running') return { state: 'running', label: keyword === 'waiting' ? '等待中' : '运行中' };
+    if (keyword === 'idle' || keyword === 'unreturn') return { state: 'idle', label: '空闲' };
+    if (keyword === 'returning' || keyword === 'return') return { state: 'returning', label: '归位中' };
+    return { state: 'unknown', label: '状态未知' };
 };
 
 const parseLine = (line) => {
@@ -446,6 +472,9 @@ const parseLine = (line) => {
         const content = line.slice(1, -1);
         const parts = content.split('|');
         state.deviceStatus = formatDeviceStatus(parts[0]);
+        const control = parseControlState(parts[0]);
+        state.controlState = control.state;
+        state.controlStateLabel = control.label;
         parts.forEach(part => {
             if (part.includes('Fan:')) state.fanStatus = part.split(':')[1];
             if (part.includes('Pump:')) state.pumpStatus = part.split(':')[1];
@@ -519,6 +548,49 @@ const parseLine = (line) => {
 
 const goBack = () => uni.navigateBack();
 
+const sendBluetoothCommand = (command) => {
+    try {
+        const socket = getApp().globalData?.sppSocket;
+        if (!socket || !socket.isConnected()) throw new Error('蓝牙未连接');
+        const outputStream = socket.getOutputStream();
+        plus.android.importClass(outputStream);
+        const JavaString = plus.android.importClass('java.lang.String');
+        const payload = new JavaString(`${command}\n`);
+        outputStream.write(payload.getBytes('US-ASCII'));
+        outputStream.flush();
+        return true;
+    } catch (error) {
+        uni.showToast({ title: '蓝牙指令发送失败', icon: 'none' });
+        return false;
+    }
+};
+
+const getDeviceControlLabel = () => {
+    if (state.controlLoading) return '操作中';
+    if (state.controlState === 'unknown' || state.controlState === 'returning') return '不可操作';
+    if (state.controlState === 'running') return '暂停';
+    return state.controlState === 'paused' ? '继续' : '开始';
+};
+
+const handleDeviceControl = async () => {
+    if (state.controlLoading) return;
+    if (state.controlState === 'unknown' || state.controlState === 'returning') {
+        uni.showToast({ title: state.controlState === 'returning' ? '设备归位中，请稍后操作' : '设备状态未确认，暂不可操作', icon: 'none' });
+        return;
+    }
+    const action = state.controlState === 'running' ? 'pause' : 'start';
+    const command = action === 'start' ? '$h=1' : '$h=0';
+    if (!sendBluetoothCommand(command)) return;
+
+    state.controlLoading = true;
+    state.controlState = action === 'start' ? 'running' : 'paused';
+    state.controlStateLabel = action === 'start' ? '运行中' : '暂停';
+    uni.showToast({ title: action === 'start' ? '已下发开始指令' : '已下发暂停指令', icon: 'success' });
+    await new Promise(resolve => setTimeout(resolve, 500));
+    sendInitCommand();
+    state.controlLoading = false;
+};
+
 const handleAction = (type) => {
     if (type === 'manual') {
         const params = encodeURIComponent(JSON.stringify(state));
@@ -589,7 +661,7 @@ const handleRefresh = () => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 30rpx;
+    margin-bottom: 18rpx;
     height: 80rpx;
     position: relative;
 
@@ -639,7 +711,7 @@ const handleRefresh = () => {
 .progress-section {
     display: flex;
     justify-content: center;
-    margin-bottom: 24rpx;
+    margin-bottom: 20rpx;
 
     .progress-ring-container {
         position: relative;
@@ -778,14 +850,15 @@ const handleRefresh = () => {
 }
 
 .realtime-card {
-    height: 72rpx;
-    margin: 0 0 16rpx;
-    padding: 0 24rpx;
+    height: 104rpx;
+    margin: 0 0 20rpx;
+    padding: 0 18rpx;
     display: flex;
     align-items: center;
-    background: #F7FAFF;
-    border: 1rpx solid rgba(58, 141, 255, 0.12);
-    border-radius: 18rpx;
+    background: #FFFFFF;
+    border: 1rpx solid #E9EEF7;
+    border-radius: 24rpx;
+    box-shadow: 0 8rpx 22rpx rgba(31, 71, 124, 0.05);
     box-sizing: border-box;
 }
 
@@ -793,14 +866,16 @@ const handleRefresh = () => {
     flex: 1;
     min-width: 0;
     display: flex;
-    align-items: baseline;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
 }
 
 .realtime-label {
-    margin-right: 10rpx;
-    font-size: 20rpx;
+    margin-bottom: 8rpx;
+    font-size: 19rpx;
     color: #7B8794;
+    line-height: 1;
 }
 
 .realtime-value-box {
@@ -809,7 +884,7 @@ const handleRefresh = () => {
 }
 
 .realtime-value {
-    font-size: 28rpx;
+    font-size: 30rpx;
     line-height: 1;
     font-weight: 800;
     color: $primary-color;
@@ -818,35 +893,79 @@ const handleRefresh = () => {
 
 .realtime-unit {
     margin-left: 4rpx;
-    font-size: 19rpx;
+    font-size: 18rpx;
     color: #7B8794;
 }
 
 .realtime-divider {
     width: 1rpx;
-    height: 28rpx;
-    margin: 0 14rpx;
+    height: 52rpx;
+    margin: 0;
     background: rgba(58, 141, 255, 0.15);
+}
+
+.realtime-control {
+    flex: 1;
+    min-width: 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.realtime-control-label {
+    margin-bottom: 8rpx;
+    font-size: 19rpx;
+    line-height: 1;
+    color: #7B8794;
+}
+
+.realtime-control-button {
+    width: 116rpx;
+    height: 44rpx;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 22rpx;
+    background: $primary-color;
+    box-shadow: 0 6rpx 12rpx rgba(58, 141, 255, 0.2);
+    color: #FFFFFF;
+    font-size: 22rpx;
+    font-weight: 600;
+    box-sizing: border-box;
+
+    &.disabled {
+        background: #D7DCE5;
+        color: #8B95A3;
+        box-shadow: none;
+    }
+
+    &:active:not(.disabled) {
+        opacity: 0.8;
+    }
 }
 
 .action-grid {
     display: flex;
-    margin-bottom: 30rpx;
+    margin-bottom: 20rpx;
 
     .action-card {
         flex: 1;
         min-width: 0;
         background: #fff;
-        border-radius: 30rpx;
-        padding: 32rpx;
+        border: 1rpx solid #E9EEF7;
+        border-radius: 24rpx;
+        padding: 32rpx 32rpx;
         display: flex;
         flex-direction: column;
         align-items: center;
-        box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.04);
+        box-shadow: 0 8rpx 22rpx rgba(31, 71, 124, 0.05);
         transition: transform 0.2s;
 
         & + .action-card {
-            margin-left: 26rpx;
+            margin-left: 20rpx;
         }
 
         &:active {
@@ -854,16 +973,16 @@ const handleRefresh = () => {
         }
 
         .icon-box {
-            width: 78rpx;
-            height: 78rpx;
-            border-radius: 24rpx;
+            width: 72rpx;
+            height: 72rpx;
+            border-radius: 20rpx;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 14rpx;
+            margin-bottom: 18rpx;
 
             .iconfont {
-                font-size: 42rpx;
+                font-size: 40rpx;
                 transition: color 0.3s ease;
             }
 
@@ -890,9 +1009,10 @@ const handleRefresh = () => {
 
 .data-card {
     background: #fff;
-    border-radius: 28rpx;
-    padding: 34rpx 0;
-    box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.04);
+    border: 1rpx solid #E9EEF7;
+    border-radius: 24rpx;
+    padding: 30rpx 0;
+    box-shadow: 0 8rpx 22rpx rgba(31, 71, 124, 0.05);
 
     .data-row {
         display: flex;
@@ -966,6 +1086,6 @@ const handleRefresh = () => {
 }
 
 .mt-30 {
-    margin-top: 25rpx;
+    margin-top: 20rpx;
 }
 </style>

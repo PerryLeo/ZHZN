@@ -96,17 +96,20 @@
                   <text class="iconfont icon-online bound-device-icon"></text>
                   <view class="connection-dot" :class="{ online: item.online === 1, checking: item.statusLoading }"></view>
                 </view>
-                <view
-                  class="device-action-button"
-                  :class="{
-                    [item.runState]: true,
-                    disabled: item.online !== 1 || item.statusLoading || item.switchLoading || item.runState === 'unknown' || item.runState === 'returning'
-                  }"
-                  @click.stop="handleDeviceAction(item)"
-                >
-                  <text class="device-action-status">{{ item.runStateLabel }}</text>
-                  <text class="device-action-divider">|</text>
-                  <text class="device-action-label">{{ getDeviceActionLabel(item) }}</text>
+                <view class="device-control">
+                  <view class="device-state-info">
+                    <text class="device-state-caption">状态</text>
+                    <text class="device-state-value" :class="item.runState">{{ item.runStateLabel }}</text>
+                  </view>
+                  <view
+                    class="device-action-button"
+                    :class="{
+                      disabled: item.online !== 1 || item.statusLoading || item.switchLoading || item.runState === 'unknown' || item.runState === 'returning'
+                    }"
+                    @click.stop="handleDeviceAction(item)"
+                  >
+                    <text>{{ getDeviceActionLabel(item) }}</text>
+                  </view>
                 </view>
               </view>
               <view class="bound-info">
@@ -501,16 +504,21 @@ const parseRunState = (rawData) => {
   const raw = String(rawData || '');
   const carMatch = raw.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
   const carState = carMatch ? carMatch[1].trim() : '';
-  if (/^Pause$/i.test(carState)) {
+  const stateMatch = carState.match(/^(Unreturn|Pause|Wait|Return|Idle|A-B|B-A)(?=$|[\s(:])/i);
+  const stateKeyword = stateMatch ? stateMatch[1].toLowerCase() : '';
+  if (stateKeyword === 'pause') {
     return { runState: 'paused', runStateLabel: '暂停' };
   }
-  if (/^(?:Wait|A-B|B-A)$/i.test(carState)) {
-    return { runState: 'running', runStateLabel: '开始' };
+  if (stateKeyword === 'wait') {
+    return { runState: 'running', runStateLabel: '等待中' };
   }
-  if (/^(?:Idle|Unreturn)$/i.test(carState)) {
+  if (stateKeyword === 'a-b' || stateKeyword === 'b-a') {
+    return { runState: 'running', runStateLabel: '运行中' };
+  }
+  if (stateKeyword === 'idle' || stateKeyword === 'unreturn') {
     return { runState: 'idle', runStateLabel: '空闲' };
   }
-  if (/^Return$/i.test(carState)) {
+  if (stateKeyword === 'return') {
     return { runState: 'returning', runStateLabel: '归位中' };
   }
   return { runState: 'unknown', runStateLabel: '状态未知' };
@@ -529,8 +537,8 @@ const formatAbnormalStatus = (rawData) => {
     return { abnormalStatus: '--', hasAlarm: false };
   }
   const alarms = [];
-  if (batteryAlarm !== 0) alarms.push(`电池：${batteryAlarmMap[batteryAlarm] || `未知(${batteryAlarm})`}`);
-  if (fanAlarm !== 0) alarms.push(`风机：${fanAlarmMap[fanAlarm] || `未知(${fanAlarm})`}`);
+  if (batteryAlarm !== 0) alarms.push(batteryAlarmMap[batteryAlarm] || `未知(${batteryAlarm})`);
+  if (fanAlarm !== 0) alarms.push(fanAlarmMap[fanAlarm] || `未知(${fanAlarm})`);
   return {
     abnormalStatus: alarms.length > 0 ? alarms.join('；') : '无异常',
     hasAlarm: alarms.length > 0
@@ -596,8 +604,9 @@ const fetchBoundDeviceStatuses = async (devices) => {
 
 const getDeviceActionLabel = (device) => {
   if (device.switchLoading) return '操作中';
-  if (device.runState === 'returning') return '请等待';
-  return device.runState === 'running' ? '暂停' : '开始';
+  if (device.runState === 'returning' || device.runState === 'unknown') return '不可操作';
+  if (device.runState === 'running') return '暂停';
+  return device.runState === 'paused' ? '继续' : '开始';
 };
 
 const handleDeviceAction = async (device) => {
@@ -623,8 +632,9 @@ const handleDeviceAction = async (device) => {
       timeout: 10000
     }, { timeout: 12000 });
     device.runState = action === 'start' ? 'running' : 'paused';
-    device.runStateLabel = action === 'start' ? '开始' : '暂停';
-    uni.showToast({ title: action === 'start' ? '已开始' : '已暂停', icon: 'success' });
+    device.runStateLabel = action === 'start' ? '运行中' : '暂停';
+    await fetchBoundDeviceStatuses([device]);
+    uni.showToast({ title: action === 'start' ? '已下发开始指令' : '已下发暂停指令', icon: 'success' });
   } catch (error) {
     uni.showToast({
       title: typeof error === 'string' ? error : '操作失败',
@@ -686,7 +696,7 @@ const fetchBoundDevices = async ({ throwOnError = false, refreshSummaryAfterStat
       rawStatusData: '',
       statusTimestamp: '',
       runState: 'unknown',
-      runStateLabel: '状态检测中',
+      runStateLabel: '检测中',
       switchLoading: false
     }));
     // 卡片先显示，再异步查询当前页设备的实时状态；查询结果会同步回顶部汇总。
@@ -1541,7 +1551,6 @@ const toBoundDevice = (item) => {
 .device-checking-hint {
   display: inline-flex;
   align-items: center;
-  gap: 6rpx;
   margin-left: 12rpx;
   color: #6E8DF4;
   font-size: 20rpx;
@@ -1551,6 +1560,7 @@ const toBoundDevice = (item) => {
 .device-checking-spinner {
   width: 16rpx;
   height: 16rpx;
+  margin-right: 6rpx;
   border: 2rpx solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
@@ -1617,58 +1627,82 @@ const toBoundDevice = (item) => {
   }
 }
 
-.device-action-button {
-  min-width: 140rpx;
-  height: 44rpx;
-  flex-shrink: 0;
-  padding: 0 14rpx;
+.device-control {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
+}
+
+.device-state-info {
+  min-width: 64rpx;
+  height: 40rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 8rpx;
-  border-radius: 22rpx;
-  background: #F1F3F6;
   box-sizing: border-box;
+}
+
+.device-state-caption {
+  margin-bottom: 3rpx;
+  font-size: 17rpx;
+  line-height: 1;
+  color: #98A2B3;
+}
+
+.device-state-value {
+  max-width: 100rpx;
+  font-size: 20rpx;
+  line-height: 1;
+  font-weight: 600;
   color: #6B7280;
-  transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
   &.running {
-    background: #FFF2DE;
     color: #E58A13;
   }
 
   &.paused {
-    background: #EAF2FF;
     color: #3A8DFF;
   }
 
-  &.idle {
-    background: #F1F3F6;
-    color: #6B7280;
+  &.returning {
+    color: #C88124;
   }
 
+  &.unknown {
+    color: #98A2B3;
+  }
+}
+
+.device-action-button {
+  min-width: 74rpx;
+  height: 44rpx;
+  margin-left: 14rpx;
+  flex-shrink: 0;
+  padding: 0 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  background: $primary-color;
+  box-sizing: border-box;
+  color: #FFFFFF;
+  font-size: 21rpx;
+  font-weight: 600;
+  transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+
   &.disabled {
-    opacity: 0.45;
+    background: #D7DCE5;
+    color: #8B95A3;
+    opacity: 0.7;
   }
 
   &:active:not(.disabled) {
     opacity: 0.8;
   }
-}
-
-.device-action-status,
-.device-action-label {
-  font-size: 22rpx;
-  line-height: 1;
-}
-
-.device-action-label {
-  font-weight: 600;
-}
-
-.device-action-divider {
-  font-size: 20rpx;
-  opacity: 0.45;
 }
 
 .bound-info {

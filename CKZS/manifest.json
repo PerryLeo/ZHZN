@@ -2,7 +2,7 @@
     "name" : "智能喂虾机器",
     "appid" : "__UNI__CDC03C7",
     "description" : "",
-    "versionName" : "20260821",
+    "versionName" : "20260825",
     "versionCode" : "100",
     "transformPx" : false,
     /* 5+App特有相关 */
@@ -55,7 +55,8 @@
             },
             /* ios打包配置 */
             "ios" : {
-                "dSYMs" : false
+                "dSYMs" : false,
+                "idfa" : false
             },
             /* SDK配置 */
             "sdkConfigs" : {},

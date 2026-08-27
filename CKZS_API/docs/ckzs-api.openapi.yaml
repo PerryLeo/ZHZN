@@ -1,0 +1,539 @@
+openapi: 3.1.0
+info:
+  title: CKZS API
+  version: 1.0.0
+  description: CKZS App 与管理端后端接口定义
+servers:
+  - url: /
+    description: 当前服务
+tags:
+  - name: 用户
+  - name: 设备
+  - name: 设备分组
+  - name: 管理端
+  - name: 系统
+paths:
+  /health:
+    get:
+      tags: [系统]
+      x-apifox-folder: 系统
+      operationId: healthCheck
+      summary: 健康检查
+      responses:
+        '200':
+          description: 服务运行状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyObject'
+
+  /api/users/register:
+    post:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: register
+      summary: 注册
+      requestBody:
+        $ref: '#/components/requestBodies/RegisterRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/login:
+    post:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: login
+      summary: 登录
+      requestBody:
+        $ref: '#/components/requestBodies/LoginRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/profile:
+    get:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: getProfile
+      summary: 获取当前用户资料
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/bindDevice:
+    post:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: bindDevice
+      summary: 绑定设备
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/BindDeviceRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/devices/summary:
+    get:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: getDeviceSummary
+      summary: 获取我的设备汇总
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/devices:
+    get:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: getMyDevices
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/GroupId' }
+      summary: 获取当前人员绑定的设备
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/updateDeviceRemark:
+    post:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: updateDeviceRemark
+      summary: 修改设备备注名称
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/UpdateRemarkRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/unbindDevice:
+    post:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: unbindDevice
+      summary: 解绑设备
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/DeviceCodeRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/resetPassword:
+    post:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: resetPassword
+      summary: 重置密码
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/ResetPasswordRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/users/changePassword:
+    post:
+      tags: [用户]
+      x-apifox-folder: 用户
+      operationId: changePassword
+      summary: 修改密码
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/ChangePasswordRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+
+  /api/devices/command:
+    post:
+      tags: [设备]
+      x-apifox-folder: 设备
+      operationId: sendDeviceCommand
+      summary: 下发设备指令
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/CommandRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/devices/batchCommand:
+    post:
+      tags: [设备]
+      x-apifox-folder: 设备
+      operationId: batchCommand
+      summary: 批量下发设备指令
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/BatchCommandRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/devices/batchQueryStatus:
+    post:
+      tags: [设备]
+      x-apifox-folder: 设备
+      operationId: batchQueryStatus
+      summary: 批量查询设备状态
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/BatchQueryStatusRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+
+  /api/device-groups:
+    get:
+      tags: [设备分组]
+      x-apifox-folder: 设备分组
+      operationId: listDeviceGroups
+      summary: 获取设备分组列表
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+    post:
+      tags: [设备分组]
+      x-apifox-folder: 设备分组
+      operationId: createDeviceGroup
+      summary: 创建设备分组
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/CreateGroupRequest'
+      responses:
+        '201': { $ref: '#/components/responses/JsonResponse' }
+
+  /api/admin/dashboard:
+    get:
+      tags: [管理端]
+      x-apifox-folder: 管理端
+      operationId: getAdminDashboard
+      summary: 获取管理端仪表盘数据
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/admin/users:
+    get:
+      tags: [管理端]
+      x-apifox-folder: 管理端/用户管理
+      operationId: listAdminUsers
+      summary: 获取用户列表
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Keyword' }
+        - { $ref: '#/components/parameters/Role' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/admin/users/{id}/devices:
+    get:
+      tags: [管理端]
+      x-apifox-folder: 管理端/用户管理
+      operationId: listUserDevices
+      summary: 获取指定用户设备
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/admin/devices:
+    get:
+      tags: [管理端]
+      x-apifox-folder: 管理端/设备管理
+      operationId: listAdminDevices
+      summary: 获取管理端设备列表
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Keyword' }
+        - { $ref: '#/components/parameters/GroupId' }
+        - { $ref: '#/components/parameters/Status' }
+        - { $ref: '#/components/parameters/Online' }
+        - { $ref: '#/components/parameters/DeviceType' }
+        - { $ref: '#/components/parameters/UserId' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+    post:
+      tags: [管理端]
+      x-apifox-folder: 管理端/设备管理
+      operationId: createAdminDevice
+      summary: 登记设备
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/CreateDeviceRequest'
+      responses:
+        '201': { $ref: '#/components/responses/JsonResponse' }
+  /api/admin/devices/{id}:
+    put:
+      tags: [管理端]
+      x-apifox-folder: 管理端/设备管理
+      operationId: updateAdminDevice
+      summary: 修改设备
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        $ref: '#/components/requestBodies/UpdateDeviceRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+    delete:
+      tags: [管理端]
+      x-apifox-folder: 管理端/设备管理
+      operationId: deleteAdminDevice
+      summary: 删除设备
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/admin/devices/{id}/bind:
+    post:
+      tags: [管理端]
+      x-apifox-folder: 管理端/设备管理
+      operationId: bindAdminDevice
+      summary: 分配设备给用户
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        $ref: '#/components/requestBodies/AdminBindDeviceRequest'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/admin/devices/{id}/unbind:
+    post:
+      tags: [管理端]
+      x-apifox-folder: 管理端/设备管理
+      operationId: unbindAdminDevice
+      summary: 解除设备用户绑定
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 20 }
+    GroupId:
+      name: groupId
+      in: query
+      required: false
+      description: 按设备分组筛选
+      schema: { type: integer, minimum: 1 }
+    Keyword:
+      name: keyword
+      in: query
+      required: false
+      description: 用户名、设备编码或设备名称关键词
+      schema: { type: string }
+    Role:
+      name: role
+      in: query
+      required: false
+      description: 用户角色筛选
+      schema: { type: string, enum: [user, admin] }
+    Status:
+      name: status
+      in: query
+      required: false
+      description: 设备绑定状态，1 表示已绑定，0 表示未绑定
+      schema: { type: integer, enum: [0, 1] }
+    Online:
+      name: online
+      in: query
+      required: false
+      description: 在线状态，1 表示在线，0 表示离线
+      schema: { type: integer, enum: [0, 1] }
+    DeviceType:
+      name: deviceType
+      in: query
+      required: false
+      schema: { type: string, example: dtu }
+    UserId:
+      name: userId
+      in: query
+      required: false
+      description: 按绑定用户 ID 筛选
+      schema: { type: integer, minimum: 1 }
+  requestBodies:
+    RegisterRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [username, password]
+            properties:
+              username: { type: string, minLength: 1, example: user001 }
+              password: { type: string, minLength: 6, format: password, example: '123456' }
+    LoginRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [username, password]
+            properties:
+              username: { type: string, example: user001 }
+              password: { type: string, format: password, example: '123456' }
+    BindDeviceRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCode, initialName]
+            properties:
+              deviceCode: { type: string, maxLength: 100, description: 设备 IMEI 或设备编码 }
+              initialName: { type: string, maxLength: 100, description: 设备初始名称 }
+    DeviceCodeRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCode]
+            properties:
+              deviceCode: { type: string, description: 设备 IMEI 或设备编码 }
+    UpdateRemarkRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCode]
+            properties:
+              deviceCode: { type: string }
+              remarkName: { type: string, maxLength: 100, description: 备注名称，传空字符串可清空 }
+    ResetPasswordRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [username]
+            properties:
+              username: { type: string, description: 需要重置密码的用户账号 }
+    ChangePasswordRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [oldPassword, newPassword]
+            properties:
+              oldPassword: { type: string, format: password }
+              newPassword: { type: string, minLength: 6, format: password }
+    CommandRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCode, type]
+            properties:
+              deviceCode: { type: string }
+              type: { type: string, description: 指令类型；send 表示透传原始指令 }
+              params:
+                type: object
+                additionalProperties: true
+                description: 指令参数；透传模式需包含 data
+              timeout: { type: integer, minimum: 1000, maximum: 10000, default: 10000, description: 等待回执超时时间（毫秒） }
+    BatchCommandRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCodes, type]
+            properties:
+              deviceCodes:
+                type: array
+                minItems: 1
+                maxItems: 5000
+                uniqueItems: true
+                items: { type: string }
+              type: { type: string }
+              params:
+                type: object
+                additionalProperties: true
+    BatchQueryStatusRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCodes]
+            properties:
+              deviceCodes:
+                type: array
+                minItems: 1
+                maxItems: 10
+                uniqueItems: true
+                items: { type: string }
+              timeout: { type: integer, minimum: 1000, maximum: 10000, default: 5000 }
+    CreateGroupRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, deviceIds]
+            properties:
+              name: { type: string, minLength: 1, maxLength: 50 }
+              deviceIds:
+                type: array
+                minItems: 1
+                items: { type: integer }
+    CreateDeviceRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCode]
+            properties:
+              deviceCode: { type: string, description: 设备编码或 IMEI }
+              deviceName: { type: string, description: 初始名称，未传时默认使用 deviceCode }
+              deviceType: { type: string, default: dtu }
+    UpdateDeviceRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              deviceName: { type: string, description: 初始名称 }
+              deviceType: { type: string, description: 设备类型 }
+    AdminBindDeviceRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [userId]
+            properties:
+              userId: { type: integer, minimum: 1, description: 要绑定的用户 ID }
+    JsonObject:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnyObject'
+  responses:
+    JsonResponse:
+      description: 统一 JSON 响应
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnyObject'
+  schemas:
+    AnyObject:
+      type: object
+      additionalProperties: true
