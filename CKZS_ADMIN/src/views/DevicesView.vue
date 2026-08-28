@@ -14,7 +14,7 @@
         <option value="">全部设备分组</option>
         <option v-for="group in deviceGroups" :key="group.id" :value="group.id">{{ group.name }}（{{ group.deviceCount }}）</option>
       </select>
-      <select v-model="query.status" class="filter-select"><option value="">全部设备状态</option><option value="online">在线</option><option value="offline">离线</option><option value="identity-abnormal">异常</option></select>
+      <select v-model="query.status" class="filter-select"><option value="">全部设备状态</option><option value="online">在线</option><option value="offline">离线</option><option value="identity-abnormal">身份异常</option></select>
       <button class="secondary-btn" type="button" @click="search">查询</button>
       <span v-if="onlineStatusChecking" class="online-checking-hint"><i></i>正在检测当前页设备在线状态...</span>
     </div>
@@ -26,10 +26,10 @@
 
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>状态</th><th>运行状态</th><th>实时数据</th><th>快捷控制</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>身份状态</th><th>运行状态</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody>
-        <tr v-if="loading"><td colspan="10" class="empty-state">数据加载中...</td></tr>
-        <tr v-else-if="!pageData.list.length"><td colspan="10" class="empty-state">暂无符合条件的设备</td></tr>
+        <tr v-if="loading"><td colspan="13" class="empty-state">数据加载中...</td></tr>
+        <tr v-else-if="!pageData.list.length"><td colspan="13" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
           <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': !item.onlineChecking, 'device-row-disabled': item.onlineChecking }" @click="openDetail(item)">
             <td>
@@ -47,10 +47,19 @@
             </td>
             <td>{{ item.deviceName || '--' }}</td>
             <td>{{ item.owner?.username || '--' }}</td>
-            <td><div class="device-status-tags"><span v-for="status in getCombinedStatus(item)" :key="status.key" class="tag" :class="status.tone">{{ status.label }}</span></div></td>
+            <td><span class="tag" :class="getOnlineStatus(item).tone">{{ getOnlineStatus(item).label }}</span></td>
+            <td>
+              <span class="csq-signal" :class="`level-${getCsqSignalLevel(item.signalStrength)}`" :title="formatSignalTitle(item.signalStrength)">
+                <i :class="{ active: getCsqSignalLevel(item.signalStrength) >= 1 }"></i>
+                <i :class="{ active: getCsqSignalLevel(item.signalStrength) >= 2 }"></i>
+                <i :class="{ active: getCsqSignalLevel(item.signalStrength) >= 3 }"></i>
+              </span>
+            </td>
+            <td><span class="tag" :class="getIdentityStatus(item).tone">{{ getIdentityStatus(item).label }}</span></td>
             <td><span :class="['device-run-state', item.controlState]">{{ item.onlineChecking ? '检测中' : item.controlStateLabel || '状态未知' }}</span></td>
-            <td><div class="device-live-data"><span>电量 {{ formatBattery(item.batteryLevel) }}</span><span>电流 {{ formatCurrent(item.chargingCurrent) }}</span></div></td>
             <td><button class="text-btn device-control-btn" type="button" :disabled="!canControlDevice(item)" @click.stop="handleDeviceAction(item)">{{ getDeviceActionLabel(item) }}</button></td>
+            <td><div class="device-live-data"><span>电量 {{ formatBattery(item.batteryLevel) }}</span><span>电流 {{ formatCurrent(item.chargingCurrent) }}</span></div></td>
+            <td><span :class="['device-alarm', { abnormal: item.hasAlarm }]">{{ item.onlineChecking ? '检测中' : item.abnormalStatus || '--' }}</span></td>
             <td><span class="tag" :class="item.status === 1 ? 'success' : 'neutral'">{{ item.status === 1 ? '已绑定' : '未绑定' }}</span></td>
             <td>{{ formatTime(item.updatedAt) }}</td>
             <td><div class="row-actions"><button class="text-btn" type="button" @click.stop="openDetail(item)">查看详情</button><button class="text-btn" type="button" @click.stop="openDeviceForm(item)">编辑</button><button v-if="item.status === 1" class="text-btn danger" type="button" @click.stop="openUnbind(item)">解绑</button><template v-else><button class="text-btn" type="button" @click.stop="openBind(item)">绑定</button><button class="text-btn danger" type="button" @click.stop="openDelete(item)">删除</button></template></div></td>
@@ -116,9 +125,10 @@ import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import { api } from '../services/api.js';
+import { setSelectedDevice } from '../services/deviceNavigation.js';
 import { formatTime, typeLabel } from '../utils/format.js';
-import { getCombinedStatus, getDeviceStatus } from '../utils/deviceStatus.js';
-import { parseDeviceStatusReport } from '../utils/deviceProtocol.js';
+import { getDeviceStatus, getIdentityStatus, getOnlineStatus } from '../utils/deviceStatus.js';
+import { getCsqSignalLevel, parseDeviceStatusReport } from '../utils/deviceProtocol.js';
 import { showToast } from '../utils/toast.js';
 
 const deviceTypes = ['dtu', 'sensor', 'gateway', 'camera', 'controller'];
@@ -145,6 +155,9 @@ let onlineStatusRequestId = 0;
 const refreshCurrentPageOnlineStatus = async (devices) => {
   const currentDevices = Array.isArray(devices) ? devices : [];
   if (!currentDevices.length) return;
+  currentDevices.forEach(device => {
+    device.signalStrength = null;
+  });
   const requestId = ++onlineStatusRequestId;
   onlineStatusChecking.value = true;
   try {
@@ -159,14 +172,12 @@ const refreshCurrentPageOnlineStatus = async (devices) => {
       device.identityMismatch = Boolean(status?.identityMismatch);
       device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
       if (status?.success) Object.assign(device, parseDeviceStatusReport(status));
-      if (status?.identityMismatch) {
-        device.abnormalStatus = '身份异常';
-        device.hasAlarm = true;
-      }
+      else device.signalStrength = null;
       device.onlineChecking = false;
     });
   } catch (error) {
     currentDevices.forEach(device => {
+      device.signalStrength = null;
       device.onlineChecking = false;
     });
     throw error;
@@ -216,7 +227,8 @@ const openDetail = (device) => {
     showToast('设备离线，无法进入详情', 'error');
     return;
   }
-  router.push({ name: 'device-detail', params: { deviceCode: device.deviceCode }, state: { device: { ...device } } });
+  setSelectedDevice(device);
+  router.push({ name: 'device-detail', params: { deviceCode: device.deviceCode } });
 };
 const openDeviceForm = (device = null) => {
   deviceModal.editing = device;
@@ -225,6 +237,9 @@ const openDeviceForm = (device = null) => {
 };
 const formatBattery = (value) => Number.isFinite(Number(value)) ? `${Number(value)}%` : '--';
 const formatCurrent = (value) => Number.isFinite(Number(value)) ? `${Number(value)}A` : '--';
+const formatSignalTitle = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+  ? `CSQ ${Number(value)}`
+  : '信号未知';
 const getDeviceActionLabel = (device) => {
   if (device.actionLoading) return '操作中';
   if (device.controlState === 'running') return '暂停';

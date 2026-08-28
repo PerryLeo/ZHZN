@@ -29,7 +29,6 @@
                             <text class="total">{{ state.manualTripsVal }}</text>
                             <text class="unit">趟</text>
                         </view>
-                        <text class="connection-status" :class="{ abnormal: state.identityMismatch }">● {{ state.identityMismatch ? '身份异常（仍可操作）' : '已连接' }}</text>
                     </view>
                 </view>
             </view>
@@ -59,6 +58,26 @@
                         @click="handleDeviceControl"
                     >
                         <text>{{ getDeviceControlLabel() }}</text>
+                    </view>
+                </view>
+            </view>
+
+            <view class="realtime-card">
+                <view class="realtime-metric">
+                    <text class="realtime-label">身份状态</text>
+                    <view class="realtime-status-value-box">
+                        <view :class="['realtime-status-value', state.identityMismatch ? 'status-abnormal' : 'status-normal']">
+                            {{ state.identityMismatch ? '身份异常' : '身份正常' }}
+                        </view>
+                    </view>
+                </view>
+                <view class="realtime-divider"></view>
+                <view class="realtime-metric">
+                    <text class="realtime-label">异常状态</text>
+                    <view class="realtime-status-value-box">
+                        <view :class="['realtime-status-value', state.hasAlarm ? 'status-abnormal' : 'status-muted']">
+                            {{ state.abnormalStatus }}
+                        </view>
                     </view>
                 </view>
             </view>
@@ -180,19 +199,12 @@
                             </view>
                             <text class="lab">运行模式</text>
                         </view>
-                        <view class="data-item border-line">
+                        <view class="data-item">
                             <view class="val-box">
                                 <text class="val" :class="{ 'highlight': state.fanStatus === 'ON' }">{{ state.fanStatus
                                     === 'ON' ? '开启' : '关闭' }}</text>
                             </view>
                             <text class="lab">风扇</text>
-                        </view>
-                        <view class="data-item">
-                            <view class="val-box">
-                                <text class="val" :class="{ 'highlight': state.pumpStatus === 'ON' }">{{ state.pumpStatus
-                                    === 'ON' ? '开启' : '关闭' }}</text>
-                            </view>
-                            <text class="lab">撒药</text>
                         </view>
                     </view>
                 </view>
@@ -233,6 +245,8 @@ const state = reactive({
     controlStateLabel: '状态未知',
     controlLoading: false,
     identityMismatch: false,
+    abnormalStatus: '--',
+    hasAlarm: false,
     deviceCode: '',
     remarkName: '',
     timeSlots: [],
@@ -240,6 +254,7 @@ const state = reactive({
 
 const pageTitle = ref('设备状态详情');
 const isRefreshing = ref(false);
+let hasLoadedFromDeviceList = false;
 
 const handleDeviceNameUpdated = (payload) => {
     if (payload?.deviceCode === state.deviceCode) {
@@ -249,13 +264,24 @@ const handleDeviceNameUpdated = (payload) => {
 };
 
 onLoad((options) => {
+    if (options.from !== 'device-list') {
+        uni.showToast({ title: '请从设备列表进入详情', icon: 'none' });
+        setTimeout(() => uni.navigateBack(), 300);
+        return;
+    }
     if (options.name) pageTitle.value = decodeURIComponent(options.name);
     if (options.deviceCode) state.deviceCode = decodeURIComponent(options.deviceCode);
     if (options.remarkName) state.remarkName = decodeURIComponent(options.remarkName);
+    state.identityMismatch = options.identityMismatch === '1' || options.identityMismatch === 'true';
+    if (options.abnormalStatus !== undefined) state.abnormalStatus = decodeURIComponent(options.abnormalStatus);
+    state.hasAlarm = options.hasAlarm === '1' || options.hasAlarm === 'true';
 });
 
 onShow(() => {
-    if (state.deviceCode) refreshDeviceState({ syncClock: true, showLoading: true });
+    if (state.deviceCode && !hasLoadedFromDeviceList) {
+        hasLoadedFromDeviceList = true;
+        refreshDeviceState({ syncClock: true, showLoading: true });
+    }
 });
 
 onMounted(() => {
@@ -411,7 +437,6 @@ const refreshDeviceState = async ({ syncClock = false, showLoading = false } = {
     try {
         if (syncClock) await sendNetworkCommand(getTimeCommand());
         const result = await sendNetworkCommand('$#');
-        state.identityMismatch = Boolean(result?.identityMismatch);
         parseDeviceResponse(result);
     } catch (error) {
         uni.showToast({
@@ -471,7 +496,7 @@ const handleAction = (type) => {
     }
 };
 
-const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: true });
+const handleRefresh = () => refreshDeviceState({ syncClock: false, showLoading: true });
 </script>
 
 <style lang="scss" scoped>
@@ -752,6 +777,35 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
     font-variant-numeric: tabular-nums;
 }
 
+.realtime-status-value-box {
+    min-height: 40rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.realtime-status-value {
+    max-width: 280rpx;
+    padding: 0;
+    font-size: 22rpx;
+    line-height: 1.4;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.status-normal {
+    color: #159570;
+}
+
+.status-abnormal {
+    color: #D54941;
+}
+
+.status-muted {
+    color: #7B8794;
+}
+
 .realtime-unit {
     margin-left: 4rpx;
     font-size: 18rpx;
@@ -890,10 +944,11 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
                 content: '';
                 position: absolute;
                 right: 0;
-                top: 20%;
-                height: 60%;
+                top: 50%;
+                height: 52rpx;
                 width: 1rpx;
-                background: rgba(0, 0, 0, 0.05);
+                background: rgba(58, 141, 255, 0.15);
+                transform: translateY(-50%);
             }
 
             .val-box {

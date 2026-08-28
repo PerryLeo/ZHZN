@@ -17,7 +17,8 @@
         <div class="detail-identity">
           <div class="detail-title-row">
           <h2>{{ device.remarkName || '--' }}</h2>
-            <span class="tag" :class="deviceStatus.tone">{{ deviceStatus.label }}</span>
+            <span class="tag" :class="deviceIdentityStatus.tone">{{ deviceIdentityStatus.label }}</span>
+            <span class="tag" :class="abnormalStatusTone">{{ deviceState.abnormalStatus }}</span>
             <span class="tag" :class="isBound ? 'success' : 'neutral'">{{ isBound ? '已绑定' : '未绑定' }}</span>
           </div>
           <p>{{ device.deviceCode }} · 初始名称 {{ device.deviceName || '--' }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}<template v-if="deviceState.version"> · 固件 {{ deviceState.version }}</template></p>
@@ -44,24 +45,25 @@
         <section class="status-overview panel">
           <div class="status-ring" :style="ringStyle">
             <div class="status-ring-core">
+              <time>{{ deviceState.deviceTime }}</time>
               <span>当前状态</span>
               <strong>{{ deviceState.deviceStatus }}</strong>
               <b>{{ deviceState.currentTrip }} <em>/ {{ deviceState.manualTripsVal }} 趟</em></b>
             </div>
           </div>
           <div class="status-summary">
-            <div><span>设备时间</span><strong>{{ deviceState.deviceTime }}</strong></div>
             <div><span>运行模式</span><strong>{{ deviceState.runMode }}</strong></div>
             <div><span>电量</span><strong>{{ formatRealtimeValue(deviceState.batteryLevel, '%') }}</strong></div>
             <div><span>充电电流</span><strong>{{ formatRealtimeValue(deviceState.chargingCurrent, 'A') }}</strong></div>
             <div><span>风机状态</span><strong>{{ fanLabel }}</strong></div>
-            <div><span>撒药状态</span><strong>{{ pumpLabel }}</strong></div>
-            <div><span>异常状态</span><strong :class="{ 'metric-abnormal': deviceState.hasAlarm }">{{ deviceState.abnormalStatus }}</strong></div>
           </div>
         </section>
 
         <section class="panel raw-response-panel">
-          <div class="panel-header compact"><div><h2>最近设备回执</h2><p>接口返回的原始透传数据</p></div></div>
+          <div class="panel-header compact">
+            <div><h2>最近设备回执</h2><p>接口返回的原始透传数据</p></div>
+            <button class="secondary-btn response-copy-btn" type="button" :disabled="!rawResponse" @click="copyRawResponse">复制回执</button>
+          </div>
           <pre>{{ rawResponse || '刷新设备数据后将在这里显示设备回执' }}</pre>
         </section>
       </div>
@@ -163,8 +165,9 @@ import { useRoute, useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
 import { api } from '../services/api.js';
+import { getSelectedDevice } from '../services/deviceNavigation.js';
 import { typeLabel } from '../utils/format.js';
-import { getDeviceStatus } from '../utils/deviceStatus.js';
+import { getDeviceStatus, getIdentityStatus } from '../utils/deviceStatus.js';
 import { showToast } from '../utils/toast.js';
 import { createDeviceState, createSlotCommand, extractResponseText, getTimeCommand, parseDeviceResponse } from '../utils/deviceProtocol.js';
 
@@ -224,8 +227,13 @@ const parameterFields = [
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
 const deviceStatus = computed(() => getDeviceStatus(device.value));
+const deviceIdentityStatus = computed(() => getIdentityStatus(device.value));
 const canOperate = computed(() => isBound.value && deviceStatus.value.isOnline);
 const canDeviceControl = computed(() => canOperate.value && !['unknown', 'returning'].includes(deviceState.controlState));
+const abnormalStatusTone = computed(() => {
+  if (deviceState.hasAlarm) return 'danger';
+  return deviceState.abnormalStatus === '--' ? 'neutral' : 'success';
+});
 const getDeviceControlLabel = computed(() => {
   if (commandBusy.value) return '操作中...';
   if (deviceState.controlState === 'running') return '暂停运行';
@@ -234,7 +242,6 @@ const getDeviceControlLabel = computed(() => {
   return '不可操作';
 });
 const fanLabel = computed(() => deviceState.fanStatus === 'ON' ? '开启' : deviceState.fanStatus === 'OFF' ? '关闭' : '--');
-const pumpLabel = computed(() => deviceState.pumpStatus === 'ON' ? '开启' : deviceState.pumpStatus === 'OFF' ? '关闭' : '--');
 const progress = computed(() => deviceState.manualTripsVal > 0 ? Math.min((deviceState.currentTrip / deviceState.manualTripsVal) * 100, 100) : 0);
 const ringStyle = computed(() => ({ background: `conic-gradient(#3157e5 ${progress.value}%, #e9edfa ${progress.value}% 100%)` }));
 const metrics = computed(() => [
@@ -252,6 +259,16 @@ const metrics = computed(() => [
   { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: 's' },
 ]);
 const formatRealtimeValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value)}${unit}` : '--';
+
+const copyRawResponse = async () => {
+  if (!rawResponse.value) return;
+  try {
+    await navigator.clipboard.writeText(rawResponse.value);
+    showToast('回执内容已复制');
+  } catch {
+    showToast('复制失败，请重试', 'error');
+  }
+};
 
 const applyStateToForm = () => {
   Object.assign(parameterForm, {
@@ -275,11 +292,13 @@ const loadDevice = async () => {
   loading.value = true;
   try {
     const deviceCode = String(route.params.deviceCode || '');
-    const passedDevice = history.state?.device;
+    const passedDevice = getSelectedDevice();
     device.value = passedDevice?.deviceCode === deviceCode ? { ...passedDevice } : null;
 
     if (!device.value) throw new Error('未找到该设备');
     editableName.value = device.value.remarkName || '';
+    deviceState.abnormalStatus = device.value.abnormalStatus || '--';
+    deviceState.hasAlarm = Boolean(device.value.hasAlarm);
   } catch (error) {
     showToast(error.message, 'error');
   } finally {
@@ -306,7 +325,11 @@ const refreshState = async () => {
   try {
     const result = await sendCommand('$#');
     const parsed = parseDeviceResponse(result, deviceState);
+    const abnormalStatus = deviceState.abnormalStatus;
+    const hasAlarm = deviceState.hasAlarm;
     Object.assign(deviceState, parsed.state);
+    deviceState.abnormalStatus = abnormalStatus;
+    deviceState.hasAlarm = hasAlarm;
     rawResponse.value = parsed.text;
     applyStateToForm();
     showToast('设备数据已更新');
@@ -479,10 +502,9 @@ onMounted(async () => {
 .detail-back span { font-size: 18px; }
 .detail-hero-main { display: flex; align-items: center; gap: 17px; margin-top: 16px; }
 .detail-device-icon { position: relative; width: 58px; height: 58px; display: grid; flex: 0 0 58px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; color: #fff; background: rgba(255,255,255,.12); }
-.detail-device-icon i { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border: 3px solid #3157e5; border-radius: 50%; background: #aeb7cd; }
-.detail-device-icon i.online { background: #35d29a; }
-.detail-device-icon i.abnormal { background: #ff6868; }
-.metric-abnormal { color: #d23b43; }
+.detail-device-icon i { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: #b8c0cf; box-shadow: 0 1px 3px rgba(16,25,54,.28); }
+.detail-device-icon i.online { background: var(--success); }
+.detail-device-icon i.abnormal { background: #dc5252; }
 .readonly-device-name { color: var(--muted); font-size: 12px; }
 .detail-identity { min-width: 0; flex: 1; }
 .detail-title-row { display: flex; align-items: center; gap: 9px; }
@@ -502,6 +524,7 @@ onMounted(async () => {
 .status-overview { min-height: 292px; display: grid; grid-template-columns: 260px 1fr; align-items: center; padding: 28px; }
 .status-ring { width: 210px; height: 210px; display: grid; place-items: center; border-radius: 50%; transform: rotate(-90deg); }
 .status-ring-core { width: 166px; height: 166px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px #edf0f7; transform: rotate(90deg); }
+.status-ring-core time { margin-bottom: 10px; padding: 4px 10px; border-radius: 999px; color: var(--primary); background: #f1f4ff; font-size: 12px; font-style: normal; font-weight: 650; line-height: 1; }
 .status-ring-core span { color: var(--muted); font-size: 12px; }
 .status-ring-core strong { margin-top: 8px; font-size: 22px; }
 .status-ring-core b { margin-top: 11px; color: var(--primary); font-size: 17px; }
@@ -512,6 +535,8 @@ onMounted(async () => {
 .status-summary span { color: var(--muted); font-size: 11px; }
 .status-summary strong { margin-top: 10px; font-size: 16px; }
 .panel-header.compact { min-height: 64px; padding: 15px 20px; }
+.response-copy-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 12px; }
+.response-copy-btn:disabled { cursor: not-allowed; opacity: .5; }
 .raw-response-panel { min-width: 0; }
 .raw-response-panel pre { height: 228px; margin: 0; overflow: auto; padding: 18px 20px; color: #dce4ff; background: #111a31; font: 12px/1.75 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 .metric-panel { overflow: hidden; }

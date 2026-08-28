@@ -33,6 +33,15 @@ const getStatusMetric = (text, fields) => {
   return match ? Number(match[1]) : null;
 };
 
+export const getCsqSignalLevel = (value) => {
+  const csq = Number(value);
+  if (!Number.isFinite(csq) || csq < 0 || csq > 31) return 0;
+  if (csq >= 24) return 3;
+  if (csq >= 17) return 2;
+  if (csq >= 13) return 1;
+  return 0;
+};
+
 export const parseControlState = (rawState) => {
   const value = String(rawState || '').trim();
   const matched = value.match(/^(Unreturn|Pause|Wait|Waiting|Running|Return|Returning|Idle|A-B|B-A)(?=$|[\s(:])/i);
@@ -59,6 +68,7 @@ export const parseDeviceStatusReport = (payload) => {
   return {
     batteryLevel: getStatusMetric(text, ['BatLevel']),
     chargingCurrent: getStatusMetric(text, ['I_Chg']),
+    signalStrength: getStatusMetric(text, ['CSQ']),
     ...(carMatch ? parseControlState(carMatch[1]) : {}),
     abnormalStatus: batteryAlarm === null || fanAlarm === null ? '--' : (alarms.length ? alarms.join('；') : '无异常'),
     hasAlarm: alarms.length > 0,

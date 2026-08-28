@@ -113,9 +113,18 @@
                 </view>
               </view>
               <view class="bound-info">
-                <text class="bound-name">{{ item.remarkName || item.deviceCode }}</text>
+                <text class="bound-name">{{ item.remarkName || '--' }}</text>
               </view>
               <view class="bound-metrics">
+                <view class="bound-metric">
+                  <text class="metric-label">信号</text>
+                  <view class="signal-icon bound-signal-icon">
+                    <view class="signal-bar" :style="{ backgroundColor: item.csqSignalLevel >= 1 ? getSignalColor(item.csqSignalLevel) : '#E0E0E0' }"></view>
+                    <view class="signal-bar" :style="{ backgroundColor: item.csqSignalLevel >= 2 ? getSignalColor(item.csqSignalLevel) : '#E0E0E0' }"></view>
+                    <view class="signal-bar" :style="{ backgroundColor: item.csqSignalLevel >= 3 ? getSignalColor(item.csqSignalLevel) : '#E0E0E0' }"></view>
+                  </view>
+                </view>
+                <view class="metric-divider"></view>
                 <view class="bound-metric">
                   <text class="metric-label">电量</text>
                   <text class="metric-value">{{ formatBatteryLevel(item.battery) }}</text>
@@ -127,18 +136,30 @@
                 </view>
               </view>
               <view class="mode-row">
+                <text class="mode-label">身份状态</text>
+                <text
+                  class="mode-value"
+                  :class="{
+                    abnormal: item.online === 1 && item.identityMismatch,
+                    normal: !item.statusLoading && item.online === 1 && !item.identityMismatch
+                  }"
+                >
+                  {{ item.statusLoading ? '--' : (item.online !== 1 ? '--' : (item.identityMismatch ? '身份异常' : '身份正常')) }}
+                </text>
+              </view>
+              <view class="mode-row">
                 <text class="mode-label">异常状态</text>
-                <text class="mode-value" :class="{ abnormal: item.hasAlarm || item.identityMismatch }">{{ item.identityMismatch ? '身份异常' : item.abnormalStatus }}</text>
+                <text class="mode-value" :class="{ abnormal: item.hasAlarm }">{{ item.abnormalStatus }}</text>
               </view>
             </view>
           </view>
-          <view class="bound-pagination" v-if="!boundLoading && boundTotalPages > 1">
+          <view class="bound-pagination" v-if="!boundLoading && boundTotal > 0">
             <view
               class="pagination-btn"
               :class="{ disabled: boundPage <= 1 }"
               @click.stop="changeBoundPage(boundPage - 1)"
             >上一页</view>
-            <text class="pagination-info">{{ boundPage }} / {{ boundTotalPages }}</text>
+            <text class="pagination-info">第 {{ boundPage }} / {{ boundTotalPages }} 页</text>
             <view
               class="pagination-btn"
               :class="{ disabled: boundPage >= boundTotalPages }"
@@ -502,25 +523,34 @@ const findMetricValue = (rawData, names) => {
   return match ? Number(match[1]) : null;
 };
 
+const getCsqSignalLevel = (value) => {
+  const csq = Number(value);
+  if (!Number.isFinite(csq) || csq < 0 || csq > 31) return 0;
+  if (csq >= 24) return 3;
+  if (csq >= 17) return 2;
+  if (csq >= 13) return 1;
+  return 0;
+};
+
 const parseRunState = (rawData) => {
   const raw = String(rawData || '');
   const carMatch = raw.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
   const carState = carMatch ? carMatch[1].trim() : '';
-  const stateMatch = carState.match(/^(Unreturn|Pause|Wait|Return|Idle|A-B|B-A)(?=$|[\s(:])/i);
+  const stateMatch = carState.match(/^(Unreturn|Pause|Wait|Waiting|Running|Return|Returning|Idle|A-B|B-A)(?=$|[\s(:])/i);
   const stateKeyword = stateMatch ? stateMatch[1].toLowerCase() : '';
   if (stateKeyword === 'pause') {
     return { runState: 'paused', runStateLabel: '暂停' };
   }
-  if (stateKeyword === 'wait') {
+  if (stateKeyword === 'wait' || stateKeyword === 'waiting') {
     return { runState: 'running', runStateLabel: '等待中' };
   }
-  if (stateKeyword === 'a-b' || stateKeyword === 'b-a') {
+  if (stateKeyword === 'running' || stateKeyword === 'a-b' || stateKeyword === 'b-a') {
     return { runState: 'running', runStateLabel: '运行中' };
   }
   if (stateKeyword === 'idle' || stateKeyword === 'unreturn') {
     return { runState: 'idle', runStateLabel: '空闲' };
   }
-  if (stateKeyword === 'return') {
+  if (stateKeyword === 'return' || stateKeyword === 'returning') {
     return { runState: 'returning', runStateLabel: '归位中' };
   }
   return { runState: 'unknown', runStateLabel: '状态未知' };
@@ -552,6 +582,7 @@ const parseDeviceMetrics = (result) => {
   return {
     battery: findMetricValue(rawData, ['BatLevel']),
     current: findMetricValue(rawData, ['I_Chg']),
+    csq: findMetricValue(rawData, ['CSQ']),
     ...formatAbnormalStatus(rawData),
     ...parseRunState(rawData),
     rawData,
@@ -567,6 +598,8 @@ const fetchBoundDeviceStatuses = async (devices) => {
     device.statusLoading = true;
     device.statusError = '';
     device.identityMismatch = false;
+    device.csq = null;
+    device.csqSignalLevel = 0;
     if (['异常', '身份异常', '设备身份异常'].includes(device.abnormalStatus)) {
       device.abnormalStatus = '--';
       device.hasAlarm = false;
@@ -587,14 +620,18 @@ const fetchBoundDeviceStatuses = async (devices) => {
         if (!status?.success) {
           device.online = 0;
           device.statusError = status?.error || '设备状态获取失败';
+          device.runState = 'unknown';
+          device.runStateLabel = '状态未知';
           return;
         }
         device.online = 1;
         const metrics = parseDeviceMetrics(status);
         device.battery = metrics.battery;
         device.current = metrics.current;
-        device.abnormalStatus = device.identityMismatch ? '身份异常' : metrics.abnormalStatus;
-        device.hasAlarm = device.identityMismatch || metrics.hasAlarm;
+        device.csq = metrics.csq;
+        device.csqSignalLevel = getCsqSignalLevel(metrics.csq);
+        device.abnormalStatus = metrics.abnormalStatus;
+        device.hasAlarm = metrics.hasAlarm;
         device.runState = metrics.runState;
         device.runStateLabel = metrics.runStateLabel;
         device.rawStatusData = metrics.rawData;
@@ -602,6 +639,9 @@ const fetchBoundDeviceStatuses = async (devices) => {
       });
     } catch (error) {
       currentDevices.forEach(device => {
+        device.online = 0;
+        device.runState = 'unknown';
+        device.runStateLabel = '状态未知';
         device.statusError = typeof error === 'string' ? error : '设备状态获取失败';
       });
     } finally {
@@ -703,6 +743,8 @@ const fetchBoundDevices = async ({ throwOnError = false, refreshSummaryAfterStat
       online: 0,
       battery: null,
       current: null,
+      csq: null,
+      csqSignalLevel: 0,
       abnormalStatus: '--',
       hasAlarm: false,
       identityMismatch: false,
@@ -1118,9 +1160,9 @@ const toBoundDevice = (item) => {
     return;
   }
 
-  const name = item.remarkName || item.deviceCode;
+  const name = item.remarkName || '--';
   uni.navigateTo({
-    url: `/pages/networkDeviceState/index?deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}&remarkName=${encodeURIComponent(item.remarkName || '')}`
+    url: `/pages/networkDeviceState/index?from=device-list&deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}&remarkName=${encodeURIComponent(item.remarkName || '')}&identityMismatch=${item.identityMismatch ? '1' : '0'}&abnormalStatus=${encodeURIComponent(item.abnormalStatus || '--')}&hasAlarm=${item.hasAlarm ? '1' : '0'}`
   });
 };
 </script>
@@ -1829,6 +1871,10 @@ const toBoundDevice = (item) => {
 
   &.abnormal {
     color: #FF4D4F;
+  }
+
+  &.normal {
+    color: #159570;
   }
 }
 
