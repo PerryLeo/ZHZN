@@ -86,7 +86,7 @@
           <view class="bound-grid" v-if="!boundLoading && filteredBoundDevices.length > 0">
             <view
               class="bound-card"
-              :class="{ 'is-disabled': item.statusLoading || item.online !== 1 || item.identityMismatch }"
+              :class="{ 'is-disabled': item.statusLoading || item.online !== 1 }"
               v-for="item in filteredBoundDevices"
               :key="item.id"
               @click="toBoundDevice(item)"
@@ -104,7 +104,7 @@
                   <view
                     class="device-action-button"
                     :class="{
-                      disabled: item.online !== 1 || item.statusLoading || item.switchLoading || item.identityMismatch || item.runState === 'unknown' || item.runState === 'returning'
+                      disabled: item.online !== 1 || item.statusLoading || item.switchLoading || item.runState === 'unknown' || item.runState === 'returning'
                     }"
                     @click.stop="handleDeviceAction(item)"
                   >
@@ -128,7 +128,7 @@
               </view>
               <view class="mode-row">
                 <text class="mode-label">异常状态</text>
-                <text class="mode-value" :class="{ abnormal: item.hasAlarm }">{{ item.abnormalStatus }}</text>
+                <text class="mode-value" :class="{ abnormal: item.hasAlarm || item.identityMismatch }">{{ item.identityMismatch ? '身份异常' : item.abnormalStatus }}</text>
               </view>
             </view>
           </view>
@@ -567,7 +567,7 @@ const fetchBoundDeviceStatuses = async (devices) => {
     device.statusLoading = true;
     device.statusError = '';
     device.identityMismatch = false;
-    if (device.abnormalStatus === '设备身份异常') {
+    if (['异常', '身份异常', '设备身份异常'].includes(device.abnormalStatus)) {
       device.abnormalStatus = '--';
       device.hasAlarm = false;
     }
@@ -583,24 +583,18 @@ const fetchBoundDeviceStatuses = async (devices) => {
 
       currentDevices.forEach(device => {
         const status = statusMap.get(device.deviceCode);
+        device.identityMismatch = Boolean(status?.identityMismatch);
         if (!status?.success) {
-          device.identityMismatch = Boolean(status?.identityMismatch);
-          device.online = device.identityMismatch ? 1 : 0;
+          device.online = 0;
           device.statusError = status?.error || '设备状态获取失败';
-          if (device.identityMismatch) {
-            device.abnormalStatus = '设备身份异常';
-            device.hasAlarm = true;
-            device.runState = 'unknown';
-            device.runStateLabel = '身份异常';
-          }
           return;
         }
         device.online = 1;
         const metrics = parseDeviceMetrics(status);
         device.battery = metrics.battery;
         device.current = metrics.current;
-        device.abnormalStatus = metrics.abnormalStatus;
-        device.hasAlarm = metrics.hasAlarm;
+        device.abnormalStatus = device.identityMismatch ? '身份异常' : metrics.abnormalStatus;
+        device.hasAlarm = device.identityMismatch || metrics.hasAlarm;
         device.runState = metrics.runState;
         device.runStateLabel = metrics.runStateLabel;
         device.rawStatusData = metrics.rawData;
@@ -630,10 +624,6 @@ const getDeviceActionLabel = (device) => {
 };
 
 const handleDeviceAction = async (device) => {
-  if (device.identityMismatch) {
-    uni.showToast({ title: '设备身份异常，暂不可操作', icon: 'none' });
-    return;
-  }
   if (device.online !== 1) {
     uni.showToast({ title: '设备离线，无法操作', icon: 'none' });
     return;
@@ -1121,10 +1111,6 @@ const toBoundDevice = (item) => {
   }
   if (item?.online !== 1) {
     uni.showToast({ title: '设备离线，无法进入详情', icon: 'none' });
-    return;
-  }
-  if (item?.identityMismatch) {
-    uni.showToast({ title: '设备身份异常，暂不可进入详情', icon: 'none' });
     return;
   }
   if (!item?.deviceCode) {

@@ -19,8 +19,51 @@ export const createDeviceState = () => ({
   pumpStatus: '',
   version: '',
   deviceTime: '--:--:--',
+  batteryLevel: null,
+  chargingCurrent: null,
+  abnormalStatus: '--',
+  hasAlarm: false,
+  controlState: 'unknown',
+  controlStateLabel: '状态未知',
   timeSlots: Array.from({ length: 12 }, () => ({ time: '00:00', trips: 0 })),
 });
+
+const getStatusMetric = (text, fields) => {
+  const match = String(text || '').match(new RegExp(`(?:^|[|\\r\\n])(?:${fields.join('|')})\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)`, 'i'));
+  return match ? Number(match[1]) : null;
+};
+
+export const parseControlState = (rawState) => {
+  const value = String(rawState || '').trim();
+  const matched = value.match(/^(Unreturn|Pause|Wait|Waiting|Running|Return|Returning|Idle|A-B|B-A)(?=$|[\s(:])/i);
+  const keyword = matched ? matched[1].toLowerCase() : '';
+  if (keyword === 'pause') return { controlState: 'paused', controlStateLabel: '暂停' };
+  if (keyword === 'wait' || keyword === 'waiting' || keyword === 'running' || keyword === 'a-b' || keyword === 'b-a') {
+    return { controlState: 'running', controlStateLabel: keyword === 'wait' || keyword === 'waiting' ? '等待中' : '运行中' };
+  }
+  if (keyword === 'idle' || keyword === 'unreturn') return { controlState: 'idle', controlStateLabel: '空闲' };
+  if (keyword === 'return' || keyword === 'returning') return { controlState: 'returning', controlStateLabel: '归位中' };
+  return { controlState: 'unknown', controlStateLabel: '状态未知' };
+};
+
+export const parseDeviceStatusReport = (payload) => {
+  const text = extractResponseText(payload);
+  const carMatch = text.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
+  const batteryAlarm = getStatusMetric(text, ['BatAlarm']);
+  const fanAlarm = getStatusMetric(text, ['FanAlarm']);
+  const batteryAlarmMap = { 1: '满', 2: '过流', 3: '拔出', 4: '过压', 5: '欠流', 6: '电池电压过低' };
+  const fanAlarmMap = { 1: '风扇1低于阈值', 2: '风扇2低于阈值', 3: '两个风扇均低于阈值', 5: '启动瞬间电流不足' };
+  const alarms = [];
+  if (batteryAlarm !== null && batteryAlarm !== 0) alarms.push(batteryAlarmMap[batteryAlarm] || `电池告警(${batteryAlarm})`);
+  if (fanAlarm !== null && fanAlarm !== 0) alarms.push(fanAlarmMap[fanAlarm] || `风扇告警(${fanAlarm})`);
+  return {
+    batteryLevel: getStatusMetric(text, ['BatLevel']),
+    chargingCurrent: getStatusMetric(text, ['I_Chg']),
+    ...(carMatch ? parseControlState(carMatch[1]) : {}),
+    abnormalStatus: batteryAlarm === null || fanAlarm === null ? '--' : (alarms.length ? alarms.join('；') : '无异常'),
+    hasAlarm: alarms.length > 0,
+  };
+};
 
 export const extractResponseText = (payload) => {
   if (payload === null || payload === undefined) return '';
@@ -63,6 +106,7 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
   if (statusMatch) {
     const parts = statusMatch[1].split('|');
     nextState.deviceStatus = formatDeviceStatus(parts[0]);
+    Object.assign(nextState, parseControlState(parts[0]));
     parts.forEach((part) => {
       if (part.includes('Fan:')) nextState.fanStatus = part.split(':')[1];
       if (part.includes('Pump:')) nextState.pumpStatus = part.split(':')[1];
@@ -75,6 +119,8 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
 
   const versionMatch = text.match(/(?:^|[|\r\n])Ver:\s*([^|\r\n]+)/i);
   if (versionMatch) nextState.version = versionMatch[1].trim();
+
+  Object.assign(nextState, parseDeviceStatusReport(text));
 
   const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
   const fieldMap = {

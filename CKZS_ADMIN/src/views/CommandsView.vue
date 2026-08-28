@@ -5,9 +5,9 @@
       <div class="panel-header"><div><h2>选择目标设备</h2><p>仅显示已绑定设备，请选择 1 台</p></div><span class="role-tag">{{ selectedCode ? '已选 1 台' : '未选择' }}</span></div>
       <div class="device-selector">
         <label v-for="item in devices" :key="item.id" class="select-device" :class="{ selected: selectedCode === item.deviceCode }">
-          <input v-model="selectedCode" class="command-device-checkbox" type="radio" name="command-target-device" :value="item.deviceCode">
+          <input v-model="selectedCode" class="command-device-checkbox" type="radio" name="command-target-device" :value="item.deviceCode" :disabled="item.onlineChecking || !getDeviceStatus(item).isOnline">
           <span><strong>{{ item.remarkName || '--' }}</strong><span>{{ item.deviceCode }} · {{ item.owner?.username || '未分配用户' }}</span></span>
-          <span class="tag" :class="item.online === 1 ? 'success' : 'danger'">{{ item.online === 1 ? '在线' : '离线' }}</span>
+          <span class="tag" :class="getDeviceStatus(item).tone">{{ getDeviceStatus(item).label }}</span>
         </label>
         <div v-if="!devices.length" class="empty-state">暂无已绑定设备</div>
       </div>
@@ -34,6 +34,7 @@ import { onMounted, reactive, ref } from 'vue';
 import AppModal from '../components/AppModal.vue';
 import { api } from '../services/api.js';
 import { showToast } from '../utils/toast.js';
+import { getDeviceStatus } from '../utils/deviceStatus.js';
 
 const loading = ref(true);
 const sending = ref(false);
@@ -44,6 +45,30 @@ const result = ref('');
 const form = reactive({ payload: '' });
 const commandType = 'send';
 
+const refreshDeviceStatuses = async (list) => {
+  const batches = [];
+  for (let index = 0; index < list.length; index += 10) batches.push(list.slice(index, index + 10));
+
+  for (const batch of batches) {
+    try {
+      const result = await api.post('/api/devices/batchQueryStatus', {
+        deviceCodes: batch.map(device => device.deviceCode),
+        timeout: 5000,
+      });
+      const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
+      batch.forEach(device => {
+        const status = statusMap.get(device.deviceCode);
+        device.online = status?.success || status?.identityMismatch ? 1 : 0;
+        device.identityMismatch = Boolean(status?.identityMismatch);
+        device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
+        device.onlineChecking = false;
+      });
+    } catch {
+      batch.forEach(device => { device.onlineChecking = false; });
+    }
+  }
+};
+
 const fetchDevices = async () => {
   try {
     const first = await api.get('/api/admin/devices', { page: 1, pageSize: 100, status: 1 });
@@ -53,6 +78,10 @@ const fetchDevices = async () => {
       list.push(...next.list);
     }
     devices.value = list;
+    devices.value.forEach(device => { device.onlineChecking = true; });
+    refreshDeviceStatuses(devices.value).catch(() => {
+      showToast('设备在线状态检测失败', 'error');
+    });
   } catch (error) { showToast(error.message, 'error'); }
   finally { loading.value = false; }
 };
@@ -62,6 +91,8 @@ const getParams = () => {
 };
 const openConfirm = () => {
   if (!selectedCode.value) return showToast('请选择一台设备', 'error');
+  const selected = devices.value.find(item => item.deviceCode === selectedCode.value);
+  if (!getDeviceStatus(selected).isOnline) return showToast('设备离线，无法下发指令', 'error');
   try { getParams(); confirmVisible.value = true; }
   catch (error) { showToast(error.message, 'error'); }
 };

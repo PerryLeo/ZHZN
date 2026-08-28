@@ -97,16 +97,6 @@ class MqttService {
     if (pendingRawCommands.has(deviceCode)) {
       const queue = pendingRawCommands.get(deviceCode);
       const pending = queue[0];
-      if (pending?.validate && !pending.validate(payload)) {
-        queue.shift();
-        if (queue.length === 0) pendingRawCommands.delete(deviceCode);
-        clearTimeout(pending.timer);
-        console.warn('⚠️ [透传回执身份校验失败] '+deviceCode+':', typeof payload === 'string' ? payload.slice(0, 200) : JSON.stringify(payload));
-        const error = new Error('设备身份异常：回包 IMEI 与当前设备不一致');
-        error.code = 'IDENTITY_MISMATCH';
-        pending.reject(error);
-        return;
-      }
       queue.shift();
       if (queue.length === 0) pendingRawCommands.delete(deviceCode);
       if (pending) {
@@ -191,7 +181,7 @@ class MqttService {
    * @param {string} rawData     要发送的原始字符串，如 "$b"
    * @param {number} timeoutMs   等待超时（毫秒）
    */
-  publishRawCommandAndWait(deviceCode, rawData, timeoutMs = 10000, validatePayload = null) {
+  publishRawCommandAndWait(deviceCode, rawData, timeoutMs = 10000) {
     if (!this.connected || !this.client) throw new Error('MQTT 未连接');
     const topic = MQTT_TOPIC.COMMAND_DOWN(deviceCode);
 
@@ -216,7 +206,7 @@ class MqttService {
 
       // 入队（用固定 key，与 _handleDataUp 一致）
       if (!pendingRawCommands.has(queueKey)) pendingRawCommands.set(queueKey, []);
-      pendingRawCommands.get(queueKey).push({ resolve, reject, timer, validate: validatePayload });
+      pendingRawCommands.get(queueKey).push({ resolve, reject, timer });
 
       // 发送纯文本
       this.client.publish(topic, rawData, { qos: 1 }, (err) => {

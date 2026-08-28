@@ -3,7 +3,8 @@
   <template v-else>
     <section class="stat-grid">
       <StatCard label="设备总数" :value="data.totals.devices" note="平台全部硬件资产" icon="device" color="#3157e5" soft="#edf1ff" />
-      <StatCard label="在线设备" :value="data.totals.online" :note="`在线率 ${onlineRate}%`" icon="online" color="#17a673" soft="#e9f8f2" />
+      <StatCard label="正常在线" :value="data.totals.online" :note="`正常在线率 ${onlineRate}%`" icon="online" color="#17a673" soft="#e9f8f2" />
+      <StatCard label="异常" :value="data.totals.identityAbnormal" note="设备IMEI或初始名称校验失败" icon="device" color="#dc5252" soft="#fff0f0" />
       <StatCard label="已绑定设备" :value="data.totals.bound" :note="`${data.totals.unbound} 台待绑定`" icon="bound" color="#f29b38" soft="#fff5e8" />
       <StatCard label="平台用户" :value="data.totals.users" note="APP 与 PC 共用用户" icon="users" color="#8957d9" soft="#f4edff" />
     </section>
@@ -22,7 +23,7 @@
         <div class="panel-header"><div><h2>最近更新设备</h2><p>按设备更新时间排序</p></div></div>
         <div class="panel-body activity-list">
           <div v-for="item in data.recentDevices" :key="item.id" class="activity-item">
-            <i class="status-dot" :class="{ online: item.online === 1 }"></i>
+            <i class="status-dot" :class="{ online: getDeviceStatus(item).isOnline, abnormal: getDeviceStatus(item).key === 'identity-abnormal' }"></i>
             <div class="activity-info"><strong>{{ item.remarkName || '--' }}</strong><span>{{ item.owner?.username || '未绑定用户' }}</span></div>
             <span class="activity-time">{{ formatTime(item.updatedAt) }}</span>
           </div>
@@ -38,10 +39,11 @@ import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue';
 import { api } from '../services/api.js';
 import { formatTime, typeLabel } from '../utils/format.js';
 import { showToast } from '../utils/toast.js';
+import { getDeviceStatus } from '../utils/deviceStatus.js';
 
 const loading = ref(true);
 const data = reactive({
-  totals: { users: 0, devices: 0, bound: 0, unbound: 0, online: 0, offline: 0 },
+  totals: { users: 0, devices: 0, bound: 0, unbound: 0, online: 0, offline: 0, identityAbnormal: 0 },
   deviceTypes: [],
   recentDevices: [],
 });

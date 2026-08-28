@@ -40,6 +40,11 @@ export const initDeviceModel = (sequelize) => {
       defaultValue: 0,
       comment: '在线状态: 0-离线 1-在线',
     },
+    identityAbnormal: {
+      type: DataTypes.TINYINT,
+      defaultValue: 0,
+      comment: '设备身份状态: 0-正常 1-回包 IMEI 与设备编码不一致',
+    },
     bindAt: {
       type: DataTypes.DATE,
       allowNull: true,

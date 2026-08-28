@@ -14,7 +14,7 @@
         <option value="">全部设备分组</option>
         <option v-for="group in deviceGroups" :key="group.id" :value="group.id">{{ group.name }}（{{ group.deviceCount }}）</option>
       </select>
-      <select v-model="query.online" class="filter-select"><option value="">全部在线状态</option><option value="1">在线</option><option value="0">离线</option></select>
+      <select v-model="query.status" class="filter-select"><option value="">全部设备状态</option><option value="online">在线</option><option value="offline">离线</option><option value="identity-abnormal">异常</option></select>
       <button class="secondary-btn" type="button" @click="search">查询</button>
       <span v-if="onlineStatusChecking" class="online-checking-hint"><i></i>正在检测当前页设备在线状态...</span>
     </div>
@@ -26,12 +26,12 @@
 
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>设备类型</th><th>所属用户</th><th>在线状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>设备状态</th><th>运行状态</th><th>实时数据</th><th>快捷控制</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody>
-        <tr v-if="loading"><td colspan="8" class="empty-state">数据加载中...</td></tr>
-        <tr v-else-if="!pageData.list.length"><td colspan="8" class="empty-state">暂无符合条件的设备</td></tr>
+        <tr v-if="loading"><td colspan="11" class="empty-state">数据加载中...</td></tr>
+        <tr v-else-if="!pageData.list.length"><td colspan="11" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
-          <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': item.online === 1 && !item.onlineChecking, 'device-row-disabled': item.online !== 1 || item.onlineChecking }" @click="openDetail(item)">
+          <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': !item.onlineChecking, 'device-row-disabled': item.onlineChecking }" @click="openDetail(item)">
             <td>
               <div class="device-cell">
                 <span class="device-thumb device-asset-thumb" aria-hidden="true">
@@ -40,14 +40,18 @@
                     <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4" />
                     <path d="M10 10h4v4h-4z" />
                   </svg>
-                  <i :class="{ online: item.online === 1, checking: item.onlineChecking }"></i>
+                  <i :class="{ online: getDeviceStatus(item).isOnline, abnormal: getDeviceStatus(item).key === 'identity-abnormal', checking: item.onlineChecking }"></i>
                 </span>
                 <div><strong>{{ item.remarkName || '--' }}</strong><span>{{ item.deviceCode }}</span></div>
               </div>
             </td>
             <td>{{ item.deviceName || '--' }}</td>
-            <td>{{ typeLabel(item.deviceType) }}</td><td>{{ item.owner?.username || '--' }}</td>
-            <td><span class="tag" :class="item.onlineChecking ? 'checking' : item.online === 1 ? 'success' : 'danger'">{{ item.onlineChecking ? '检测中' : item.online === 1 ? '在线' : '离线' }}</span></td>
+            <td>{{ item.owner?.username || '--' }}</td>
+            <td><span class="tag" :class="getOnlineStatus(item).tone">{{ getOnlineStatus(item).label }}</span></td>
+            <td><span class="tag" :class="getIdentityStatus(item).tone">{{ getIdentityStatus(item).label }}</span></td>
+            <td><span :class="['device-run-state', item.controlState]">{{ item.onlineChecking ? '检测中' : item.controlStateLabel || '状态未知' }}</span></td>
+            <td><div class="device-live-data"><span>电量 {{ formatBattery(item.batteryLevel) }}</span><span>电流 {{ formatCurrent(item.chargingCurrent) }}</span></div></td>
+            <td><button class="text-btn device-control-btn" type="button" :disabled="!canControlDevice(item)" @click.stop="handleDeviceAction(item)">{{ getDeviceActionLabel(item) }}</button></td>
             <td><span class="tag" :class="item.status === 1 ? 'success' : 'neutral'">{{ item.status === 1 ? '已绑定' : '未绑定' }}</span></td>
             <td>{{ formatTime(item.updatedAt) }}</td>
             <td><div class="row-actions"><button class="text-btn" type="button" @click.stop="openDetail(item)">查看详情</button><button class="text-btn" type="button" @click.stop="openDeviceForm(item)">编辑</button><button v-if="item.status === 1" class="text-btn danger" type="button" @click.stop="openUnbind(item)">解绑</button><template v-else><button class="text-btn" type="button" @click.stop="openBind(item)">绑定</button><button class="text-btn danger" type="button" @click.stop="openDelete(item)">删除</button></template></div></td>
@@ -60,7 +64,8 @@
 
   <AppModal v-model="deviceModal.visible" :title="deviceModal.editing ? '编辑设备' : '登记设备'" :loading="submitting" @confirm="saveDevice">
     <div class="form-field"><label>设备编码</label><input v-model.trim="deviceForm.deviceCode" class="form-control" :disabled="Boolean(deviceModal.editing)" placeholder="请输入设备唯一编码" required></div>
-    <div class="form-field"><label>设备名称</label><input v-model.trim="deviceForm.deviceName" class="form-control" placeholder="请输入设备名称" required></div>
+    <div class="form-field"><label>设备初始名称</label><input v-model.trim="deviceForm.deviceName" class="form-control" :disabled="Boolean(deviceModal.editing)" placeholder="请输入硬件设备名称" required></div>
+    <div v-if="deviceModal.editing" class="form-field"><label>备注名称</label><input v-model.trim="deviceForm.remarkName" class="form-control" placeholder="请输入备注名称"></div>
     <div class="form-field"><label>设备类型</label><select v-model="deviceForm.deviceType" class="form-control"><option v-for="type in deviceTypes" :key="type" :value="type">{{ typeLabel(type) }}</option></select></div>
   </AppModal>
 
@@ -93,13 +98,13 @@
         <input v-model="selectedGroupDeviceIds" type="checkbox" :value="device.id">
         <span class="device-thumb device-asset-thumb" aria-hidden="true">
           <AppIcon name="device" :size="19" />
-          <i :class="{ online: device.online === 1 }"></i>
+          <i :class="{ online: getDeviceStatus(device).isOnline, abnormal: getDeviceStatus(device).key === 'identity-abnormal' }"></i>
         </span>
         <span class="group-device-copy">
           <strong>{{ device.remarkName || '--' }}</strong>
           <small>{{ device.deviceCode }} · {{ device.owner?.username || '暂无所属用户' }}</small>
         </span>
-        <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>
+        <span class="tag" :class="getDeviceStatus(device).tone">{{ getDeviceStatus(device).label }}</span>
       </label>
     </div>
   </AppModal>
@@ -113,19 +118,21 @@ import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import { api } from '../services/api.js';
 import { formatTime, typeLabel } from '../utils/format.js';
+import { getDeviceStatus, getIdentityStatus, getOnlineStatus } from '../utils/deviceStatus.js';
+import { parseDeviceStatusReport } from '../utils/deviceProtocol.js';
 import { showToast } from '../utils/toast.js';
 
 const deviceTypes = ['dtu', 'sensor', 'gateway', 'camera', 'controller'];
 const loading = ref(false);
 const submitting = ref(false);
 const onlineStatusChecking = ref(false);
-const query = reactive({ page: 1, pageSize: 10, keyword: '', online: '' });
+const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '' });
 const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPages: 0 });
 const deviceModal = reactive({ visible: false, editing: null });
 const bindModal = reactive({ visible: false, device: null });
 const unbindModal = reactive({ visible: false, device: null });
 const deleteModal = reactive({ visible: false, device: null });
-const deviceForm = reactive({ deviceCode: '', deviceName: '', deviceType: 'dtu' });
+const deviceForm = reactive({ deviceCode: '', deviceName: '', remarkName: '', deviceType: 'dtu' });
 const users = ref([]);
 const bindUserId = ref(null);
 const deviceGroups = ref([]);
@@ -146,14 +153,21 @@ const refreshCurrentPageOnlineStatus = async (devices) => {
       deviceCodes: currentDevices.map(device => device.deviceCode),
       timeout: 5000,
     });
-    const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item.success]));
+    const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
     currentDevices.forEach(device => {
-      device.online = statusMap.get(device.deviceCode) === true ? 1 : 0;
+      const status = statusMap.get(device.deviceCode);
+      device.online = status?.success || status?.identityMismatch ? 1 : 0;
+      device.identityMismatch = Boolean(status?.identityMismatch);
+      device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
+      if (status?.success) Object.assign(device, parseDeviceStatusReport(status));
+      if (status?.identityMismatch) {
+        device.abnormalStatus = '身份异常';
+        device.hasAlarm = true;
+      }
       device.onlineChecking = false;
     });
   } catch (error) {
     currentDevices.forEach(device => {
-      device.online = 0;
       device.onlineChecking = false;
     });
     throw error;
@@ -168,11 +182,20 @@ const load = async () => {
       ...query,
       ...(selectedGroupId.value ? { groupId: selectedGroupId.value } : {}),
     };
+    delete params.status;
+    if (query.status === 'online') {
+      params.online = 1;
+      params.identityAbnormal = 0;
+    } else if (query.status === 'offline') {
+      params.online = 0;
+      params.identityAbnormal = 0;
+    } else if (query.status === 'identity-abnormal') {
+      params.identityAbnormal = 1;
+    }
     Object.assign(pageData, await api.get('/api/admin/devices', params));
 
     const currentDevices = [...pageData.list];
     currentDevices.forEach(device => {
-      device.online = 0;
       device.onlineChecking = true;
     });
     refreshCurrentPageOnlineStatus(currentDevices).catch(error => {
@@ -190,7 +213,7 @@ const openDetail = (device) => {
     showToast('正在检测设备状态，请稍后进入', 'info');
     return;
   }
-  if (device?.online !== 1) {
+  if (getDeviceStatus(device).key === 'offline') {
     showToast('设备离线，无法进入详情', 'error');
     return;
   }
@@ -198,8 +221,42 @@ const openDetail = (device) => {
 };
 const openDeviceForm = (device = null) => {
   deviceModal.editing = device;
-  Object.assign(deviceForm, device ? { deviceCode: device.deviceCode, deviceName: device.deviceName || '', deviceType: device.deviceType || 'dtu' } : { deviceCode: '', deviceName: '', deviceType: 'dtu' });
+  Object.assign(deviceForm, device ? { deviceCode: device.deviceCode, deviceName: device.deviceName || '', remarkName: device.remarkName || '', deviceType: device.deviceType || 'dtu' } : { deviceCode: '', deviceName: '', remarkName: '', deviceType: 'dtu' });
   deviceModal.visible = true;
+};
+const formatBattery = (value) => Number.isFinite(Number(value)) ? `${Number(value)}%` : '--';
+const formatCurrent = (value) => Number.isFinite(Number(value)) ? `${Number(value)}A` : '--';
+const getDeviceActionLabel = (device) => {
+  if (device.actionLoading) return '操作中';
+  if (device.controlState === 'running') return '暂停';
+  if (device.controlState === 'paused') return '继续';
+  if (device.controlState === 'idle') return '开始';
+  return '不可操作';
+};
+const canControlDevice = (device) => getDeviceStatus(device).isOnline
+  && !device.onlineChecking
+  && !device.actionLoading
+  && !['unknown', 'returning'].includes(device.controlState);
+const handleDeviceAction = async (device) => {
+  if (!canControlDevice(device)) return;
+  const action = device.controlState === 'running' ? 'pause' : 'start';
+  device.actionLoading = true;
+  try {
+    await api.post('/api/devices/command', {
+      deviceCode: device.deviceCode,
+      type: 'send',
+      params: { data: action === 'pause' ? '$h=0' : '$h=1' },
+      timeout: 10000,
+    });
+    device.controlState = action === 'pause' ? 'paused' : 'running';
+    device.controlStateLabel = action === 'pause' ? '暂停' : '运行中';
+    showToast(action === 'pause' ? '已下发暂停指令' : '已下发开始指令');
+    await refreshCurrentPageOnlineStatus([device]);
+  } catch (error) {
+    showToast(error.message || '设备操作失败', 'error');
+  } finally {
+    device.actionLoading = false;
+  }
 };
 const saveDevice = async () => {
   submitting.value = true;

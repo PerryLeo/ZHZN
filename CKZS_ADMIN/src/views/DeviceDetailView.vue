@@ -12,19 +12,20 @@
       <div class="detail-hero-main">
         <span class="detail-device-icon" aria-hidden="true">
           <AppIcon name="device" :size="27" />
-          <i :class="{ online: device.online === 1 }"></i>
+          <i :class="{ online: deviceStatus.isOnline, abnormal: deviceStatus.key === 'identity-abnormal' }"></i>
         </span>
         <div class="detail-identity">
           <div class="detail-title-row">
           <h2>{{ device.remarkName || '--' }}</h2>
-            <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>
+            <span class="tag" :class="deviceStatus.tone">{{ deviceStatus.label }}</span>
             <span class="tag" :class="isBound ? 'success' : 'neutral'">{{ isBound ? '已绑定' : '未绑定' }}</span>
           </div>
-          <p>{{ device.deviceCode }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}<template v-if="deviceState.version"> · 固件 {{ deviceState.version }}</template></p>
+          <p>{{ device.deviceCode }} · 初始名称 {{ device.deviceName || '--' }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}<template v-if="deviceState.version"> · 固件 {{ deviceState.version }}</template></p>
         </div>
         <div class="detail-hero-actions">
-          <button class="secondary-btn" type="button" :disabled="commandBusy || !isBound" @click="syncClock">同步时间</button>
-          <button class="primary-btn" type="button" :disabled="commandBusy || !isBound" @click="refreshState">
+          <button class="secondary-btn" type="button" :disabled="commandBusy || !canDeviceControl" @click="handleDeviceControl">{{ getDeviceControlLabel }}</button>
+          <button class="secondary-btn" type="button" :disabled="commandBusy || !canOperate" @click="syncClock">同步时间</button>
+          <button class="primary-btn" type="button" :disabled="commandBusy || !canOperate" @click="refreshState">
             {{ refreshing ? '正在获取...' : '刷新设备数据' }}
           </button>
         </div>
@@ -51,8 +52,11 @@
           <div class="status-summary">
             <div><span>设备时间</span><strong>{{ deviceState.deviceTime }}</strong></div>
             <div><span>运行模式</span><strong>{{ deviceState.runMode }}</strong></div>
+            <div><span>电量</span><strong>{{ formatRealtimeValue(deviceState.batteryLevel, '%') }}</strong></div>
+            <div><span>充电电流</span><strong>{{ formatRealtimeValue(deviceState.chargingCurrent, 'A') }}</strong></div>
             <div><span>风机状态</span><strong>{{ fanLabel }}</strong></div>
             <div><span>撒药状态</span><strong>{{ pumpLabel }}</strong></div>
+            <div><span>异常状态</span><strong :class="{ 'metric-abnormal': deviceState.hasAlarm }">{{ deviceState.abnormalStatus }}</strong></div>
           </div>
         </section>
 
@@ -83,7 +87,7 @@
               <div class="parameter-control">
                 <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.min" :max="item.max" :step="item.step">
                 <span>{{ item.unit }}</span>
-                <button type="button" :disabled="commandBusy || !isBound" @click="saveParameter(item)">保存</button>
+                <button type="button" :disabled="commandBusy || !canOperate" @click="saveParameter(item)">保存</button>
               </div>
             </div>
             <div class="parameter-field">
@@ -93,7 +97,7 @@
                   <option value="0">自动</option>
                   <option value="1">手动</option>
                 </select>
-                <button type="button" :disabled="commandBusy || !isBound" @click="saveRunMode">保存</button>
+                <button type="button" :disabled="commandBusy || !canOperate" @click="saveRunMode">保存</button>
               </div>
             </div>
           </div>
@@ -101,10 +105,12 @@
 
         <aside class="settings-side">
           <section class="panel side-card">
-            <div class="panel-header compact"><div><h2>设备名称</h2><p>APP 与 PC 将同步显示新名称</p></div></div>
+            <div class="panel-header compact"><div><h2>设备备注名称</h2><p>APP 与 PC 将同步显示该备注名称</p></div></div>
             <div class="side-card-body">
-              <input v-model.trim="editableName" class="form-control" maxlength="100" placeholder="设备名称">
-              <button class="primary-btn full-button" type="button" :disabled="savingName" @click="saveName">{{ savingName ? '保存中...' : '保存名称' }}</button>
+              <input v-model.trim="editableName" class="form-control" maxlength="100" placeholder="请输入备注名称">
+              <button class="primary-btn full-button" type="button" :disabled="savingName" @click="saveName">{{ savingName ? '保存中...' : '保存备注' }}</button>
+              <span class="readonly-device-name">设备初始名称：{{ device.deviceName || '--' }}</span>
+              <span class="readonly-device-name">设备固件版本：{{ deviceState.version || '--' }}</span>
             </div>
           </section>
 
@@ -112,7 +118,7 @@
             <div class="panel-header compact"><div><h2>透传指令</h2><p>向当前设备发送原始文本</p></div></div>
             <div class="side-card-body">
               <textarea v-model="customCommand" class="form-control custom-command" placeholder="例如：$#"></textarea>
-              <button class="primary-btn full-button" type="button" :disabled="commandBusy || !isBound || !customCommand.trim()" @click="sendCustomCommand">发送指令</button>
+              <button class="primary-btn full-button" type="button" :disabled="commandBusy || !canOperate || !customCommand.trim()" @click="sendCustomCommand">发送指令</button>
               <pre v-if="customResponse" class="custom-response">{{ customResponse }}</pre>
             </div>
           </section>
@@ -132,7 +138,7 @@
           <div class="toolbar-actions">
             <button class="secondary-btn" type="button" @click="loadDefaultSlots">载入默认配置</button>
             <button class="secondary-btn" type="button" @click="saveDefaultSlots">保存为默认</button>
-            <button class="primary-btn" type="button" :disabled="commandBusy || !isBound" @click="saveAllSlots">{{ savingSlots ? '正在下发...' : '同步全部配置' }}</button>
+            <button class="primary-btn" type="button" :disabled="commandBusy || !canOperate" @click="saveAllSlots">{{ savingSlots ? '正在下发...' : '同步全部配置' }}</button>
           </div>
         </div>
         <div class="schedule-grid">
@@ -158,6 +164,7 @@ import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
 import { api } from '../services/api.js';
 import { typeLabel } from '../utils/format.js';
+import { getDeviceStatus } from '../utils/deviceStatus.js';
 import { showToast } from '../utils/toast.js';
 import { createDeviceState, createSlotCommand, extractResponseText, getTimeCommand, parseDeviceResponse } from '../utils/deviceProtocol.js';
 
@@ -216,6 +223,16 @@ const parameterFields = [
 ];
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
+const deviceStatus = computed(() => getDeviceStatus(device.value));
+const canOperate = computed(() => isBound.value && deviceStatus.value.isOnline);
+const canDeviceControl = computed(() => canOperate.value && !['unknown', 'returning'].includes(deviceState.controlState));
+const getDeviceControlLabel = computed(() => {
+  if (commandBusy.value) return '操作中...';
+  if (deviceState.controlState === 'running') return '暂停运行';
+  if (deviceState.controlState === 'paused') return '继续运行';
+  if (deviceState.controlState === 'idle') return '开始运行';
+  return '不可操作';
+});
 const fanLabel = computed(() => deviceState.fanStatus === 'ON' ? '开启' : deviceState.fanStatus === 'OFF' ? '关闭' : '--');
 const pumpLabel = computed(() => deviceState.pumpStatus === 'ON' ? '开启' : deviceState.pumpStatus === 'OFF' ? '关闭' : '--');
 const progress = computed(() => deviceState.manualTripsVal > 0 ? Math.min((deviceState.currentTrip / deviceState.manualTripsVal) * 100, 100) : 0);
@@ -234,6 +251,7 @@ const metrics = computed(() => [
   { label: '启动最低电压', value: deviceState.startMinimumVoltage / 100, unit: 'V' },
   { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: 's' },
 ]);
+const formatRealtimeValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value)}${unit}` : '--';
 
 const applyStateToForm = () => {
   Object.assign(parameterForm, {
@@ -265,7 +283,7 @@ const loadDevice = async () => {
     device.value = pageData.list.find(item => item.deviceCode === deviceCode) || null;
 
     if (!device.value) throw new Error('未找到该设备');
-    editableName.value = device.value.deviceName || device.value.deviceCode;
+    editableName.value = device.value.remarkName || '';
   } catch (error) {
     showToast(error.message, 'error');
   } finally {
@@ -276,6 +294,7 @@ const loadDevice = async () => {
 const sendCommand = async (data, timeout = 10000) => {
   if (!device.value?.deviceCode) throw new Error('设备编码不存在');
   if (!isBound.value) throw new Error('设备未绑定，无法下发指令');
+  if (!deviceStatus.value.isOnline) throw new Error('设备离线，无法下发指令');
   return api.post('/api/devices/command', {
     deviceCode: device.value.deviceCode,
     type: 'send',
@@ -285,11 +304,13 @@ const sendCommand = async (data, timeout = 10000) => {
 };
 
 const refreshState = async () => {
-  if (refreshing.value || !isBound.value) return;
+  if (refreshing.value || !canOperate.value) return;
   refreshing.value = true;
   commandBusy.value = true;
   try {
     const result = await sendCommand('$#');
+    device.value.identityMismatch = Boolean(result?.identityMismatch);
+    device.value.identityAbnormal = device.value.identityMismatch ? 1 : 0;
     const parsed = parseDeviceResponse(result, deviceState);
     Object.assign(deviceState, parsed.state);
     rawResponse.value = parsed.text;
@@ -304,13 +325,31 @@ const refreshState = async () => {
 };
 
 const syncClock = async () => {
-  if (commandBusy.value || !isBound.value) return;
+  if (commandBusy.value || !canOperate.value) return;
   commandBusy.value = true;
   try {
     await sendCommand(getTimeCommand());
     showToast('设备时间已同步');
   } catch (error) {
     showToast(error.message || '时间同步失败', 'error');
+  } finally {
+    commandBusy.value = false;
+  }
+};
+
+const handleDeviceControl = async () => {
+  if (!canDeviceControl.value) return;
+  const action = deviceState.controlState === 'running' ? 'pause' : 'start';
+  commandBusy.value = true;
+  try {
+    await sendCommand(action === 'pause' ? '$h=0' : '$h=1');
+    deviceState.controlState = action === 'pause' ? 'paused' : 'running';
+    deviceState.controlStateLabel = action === 'pause' ? '暂停' : '运行中';
+    deviceState.deviceStatus = action === 'pause' ? '暂停' : '运行中';
+    showToast(action === 'pause' ? '已下发暂停指令' : '已下发开始指令');
+    await refreshState();
+  } catch (error) {
+    showToast(error.message || '设备操作失败', 'error');
   } finally {
     commandBusy.value = false;
   }
@@ -363,16 +402,15 @@ const sendCustomCommand = async () => {
 
 const saveName = async () => {
   const name = editableName.value.trim();
-  if (!name) return showToast('设备名称不能为空', 'error');
-  if (name === device.value.deviceName) return showToast('设备名称没有变化');
+  if (name === (device.value.remarkName || '')) return showToast('备注名称没有变化');
   savingName.value = true;
   try {
     const updated = await api.put(`/api/admin/devices/${device.value.id}`, {
-      deviceName: name,
+      remarkName: name,
       deviceType: device.value.deviceType,
     });
     device.value = { ...device.value, ...updated };
-    showToast('设备名称已保存，APP 端将同步显示');
+    showToast('备注名称已保存，APP 端将同步显示');
   } catch (error) {
     showToast(error.message || '设备名称保存失败', 'error');
   } finally {
@@ -381,7 +419,7 @@ const saveName = async () => {
 };
 
 const saveAllSlots = async () => {
-  if (savingSlots.value || !isBound.value) return;
+  if (savingSlots.value || !canOperate.value) return;
   savingSlots.value = true;
   commandBusy.value = true;
   try {
@@ -449,6 +487,9 @@ onMounted(async () => {
 .detail-device-icon { position: relative; width: 58px; height: 58px; display: grid; flex: 0 0 58px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; color: #fff; background: rgba(255,255,255,.12); }
 .detail-device-icon i { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border: 3px solid #3157e5; border-radius: 50%; background: #aeb7cd; }
 .detail-device-icon i.online { background: #35d29a; }
+.detail-device-icon i.abnormal { background: #ff6868; }
+.metric-abnormal { color: #d23b43; }
+.readonly-device-name { color: var(--muted); font-size: 12px; }
 .detail-identity { min-width: 0; flex: 1; }
 .detail-title-row { display: flex; align-items: center; gap: 9px; }
 .detail-title-row h2 { max-width: 460px; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 24px; white-space: nowrap; }

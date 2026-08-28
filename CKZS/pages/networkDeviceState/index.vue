@@ -29,7 +29,7 @@
                             <text class="total">{{ state.manualTripsVal }}</text>
                             <text class="unit">趟</text>
                         </view>
-                        <text class="connection-status">● 已连接</text>
+                        <text class="connection-status" :class="{ abnormal: state.identityMismatch }">● {{ state.identityMismatch ? '身份异常（仍可操作）' : '已连接' }}</text>
                     </view>
                 </view>
             </view>
@@ -232,6 +232,7 @@ const state = reactive({
     controlState: 'unknown',
     controlStateLabel: '状态未知',
     controlLoading: false,
+    identityMismatch: false,
     deviceCode: '',
     remarkName: '',
     timeSlots: [],
@@ -410,6 +411,7 @@ const refreshDeviceState = async ({ syncClock = false, showLoading = false } = {
     try {
         if (syncClock) await sendNetworkCommand(getTimeCommand());
         const result = await sendNetworkCommand('$#');
+        state.identityMismatch = Boolean(result?.identityMismatch);
         parseDeviceResponse(result);
     } catch (error) {
         uni.showToast({
@@ -698,6 +700,11 @@ const handleRefresh = () => refreshDeviceState({ syncClock: true, showLoading: t
                 background: rgba(82, 196, 26, 0.1);
                 padding: 4rpx 16rpx;
                 border-radius: 100rpx;
+
+                &.abnormal {
+                    color: #D54941;
+                    background: rgba(213, 73, 65, 0.1);
+                }
             }
         }
     }

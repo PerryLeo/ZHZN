@@ -46,6 +46,14 @@ export const syncDB = async () => {
       comment: '用户备注名称（可修改）',
     });
   }
+  if (!deviceColumns.identityAbnormal) {
+    await queryInterface.addColumn('devices', 'identityAbnormal', {
+      type: DataTypes.TINYINT,
+      allowNull: false,
+      defaultValue: 0,
+      comment: '设备身份状态: 0-正常 1-回包 IMEI 与设备编码不一致',
+    });
+  }
   const deviceIndexes = await queryInterface.showIndex('devices');
   if (!deviceIndexes.some(index => index.name === 'uniq_devices_initial_name')) {
     await queryInterface.addIndex('devices', ['deviceName'], {

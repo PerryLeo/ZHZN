@@ -11,11 +11,19 @@ const getRawField = (rawData, field) => {
   return match ? match[1].trim() : '';
 };
 
-const buildStatusPayloadValidator = (expectedDevice) => (payload) => {
+const getStatusPayloadIdentity = (expectedDevice, payload) => {
   const rawData = typeof payload === 'string' ? payload : '';
   const imei = getRawField(rawData, 'IMEI');
-  return imei === String(expectedDevice.deviceCode).trim();
+  const name = getRawField(rawData, 'Name');
+  return {
+    imei,
+    name,
+    matched: imei === String(expectedDevice.deviceCode).trim()
+      && name === String(expectedDevice.deviceName || '').trim(),
+  };
 };
+
+const isIdentityCheckCommand = (rawData) => /^\$(?:c|#)(?:\s|$)/i.test(String(rawData || '').trim());
 
 export const DeviceController = {
   async sendCommand(req, res) {
@@ -27,6 +35,7 @@ export const DeviceController = {
       const device = await Device.findOne({ where: { deviceCode } });
       if (!device) return fail(res, '设备不存在', 404);
       if (!device.userId || device.status !== 1) return fail(res, '设备未绑定，请先绑定设备');
+      if (device.online !== 1) return fail(res, '设备离线，无法下发指令', 409);
 
       const operator = await User.findByPk(req.user.id, { attributes: ['id', 'role'] });
       const isAdmin = operator?.role === 'admin';
@@ -39,6 +48,15 @@ export const DeviceController = {
         const rawData = (params && params.data) ? String(params.data) + '\n' : '';
         if (!rawData.trim()) return fail(res, '透传模式缺少 params.data 字段');
         result = await mqttService.publishRawCommandAndWait(deviceCode, rawData, timeout || 10000);
+        if (isIdentityCheckCommand(rawData)) {
+          const identity = getStatusPayloadIdentity(device, result.data);
+          const identityMismatch = !identity.matched;
+          await Device.update(
+            { online: 1, identityAbnormal: identityMismatch ? 1 : 0 },
+            { where: { deviceCode } }
+          );
+          result = { ...result, identityMismatch, identity };
+        }
         return success(res, result, '透传指令已发送，已收到设备回复');
       }
 
@@ -78,12 +96,13 @@ export const DeviceController = {
         where: {
           deviceCode: { [Op.in]: uniqueCodes },
           status: 1,
+          online: 1,
           ...(isAdmin ? {} : { userId: req.user.id }),
         },
-        attributes: ['deviceCode'],
+        attributes: ['deviceCode', 'deviceName'],
       });
       if (allowedDevices.length !== uniqueCodes.length) {
-        return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
+        return fail(res, '部分设备不存在、未绑定、离线或无操作权限', 403);
       }
 
       // 纯异步 fire-and-forget：并发 publish 到各设备 MQTT topic，不等回执
@@ -128,7 +147,7 @@ export const DeviceController = {
           deviceCode: { [Op.in]: uniqueCodes },
           ...(isAdmin ? {} : { status: 1, userId: req.user.id }),
         },
-        attributes: ['deviceCode'],
+        attributes: ['deviceCode', 'deviceName'],
       });
       if (allowedDevices.length !== uniqueCodes.length) {
         return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
@@ -140,37 +159,51 @@ export const DeviceController = {
           return mqttService.publishRawCommandAndWait(
             deviceCode,
             '$c\n',
-            timeout,
-            buildStatusPayloadValidator(device)
+            timeout
           );
         })
       );
       const results = settled.map((result, index) => {
         const deviceCode = uniqueCodes[index];
         if (result.status === 'fulfilled') {
-          return { deviceCode, success: true, ...result.value };
+          const device = allowedDevices.find(item => item.deviceCode === deviceCode);
+          const identity = getStatusPayloadIdentity(device, result.value.data);
+          return {
+            ...result.value,
+            deviceCode,
+            success: true,
+            identityMismatch: !identity.matched,
+            identity,
+          };
         }
         return {
           deviceCode,
           success: false,
-          identityMismatch: result.reason?.code === 'IDENTITY_MISMATCH',
+          identityMismatch: false,
           error: result.reason?.message || '设备状态查询失败',
         };
       });
       const successCount = results.filter(item => item.success).length;
-      const onlineCodes = results.filter(item => item.success || item.identityMismatch).map(item => item.deviceCode);
+      const normalOnlineCodes = results.filter(item => item.success && !item.identityMismatch).map(item => item.deviceCode);
+      const identityAbnormalCodes = results.filter(item => item.success && item.identityMismatch).map(item => item.deviceCode);
       const offlineCodes = results.filter(item => !item.success && !item.identityMismatch).map(item => item.deviceCode);
 
       const onlineUpdates = [];
-      if (onlineCodes.length > 0) {
+      if (normalOnlineCodes.length > 0) {
         onlineUpdates.push(Device.update(
-          { online: 1 },
-          { where: { deviceCode: { [Op.in]: onlineCodes } } }
+          { online: 1, identityAbnormal: 0 },
+          { where: { deviceCode: { [Op.in]: normalOnlineCodes } } }
+        ));
+      }
+      if (identityAbnormalCodes.length > 0) {
+        onlineUpdates.push(Device.update(
+          { online: 1, identityAbnormal: 1 },
+          { where: { deviceCode: { [Op.in]: identityAbnormalCodes } } }
         ));
       }
       if (offlineCodes.length > 0) {
         onlineUpdates.push(Device.update(
-          { online: 0 },
+          { online: 0, identityAbnormal: 0 },
           { where: { deviceCode: { [Op.in]: offlineCodes } } }
         ));
       }

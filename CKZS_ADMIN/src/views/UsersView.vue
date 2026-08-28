@@ -63,7 +63,7 @@
       >
         <span class="device-thumb modal-device-thumb" aria-hidden="true"><AppIcon name="device" :size="20" /></span>
         <div><strong>{{ device.remarkName || '--' }}</strong><span>{{ device.deviceCode }}</span></div>
-        <span class="tag" :class="device.online === 1 ? 'success' : 'danger'">{{ device.online === 1 ? '在线' : '离线' }}</span>
+        <span class="tag" :class="getDeviceStatus(device).tone">{{ getDeviceStatus(device).label }}</span>
       </div>
     </div>
   </AppModal>
@@ -78,6 +78,7 @@ import { api } from '../services/api.js';
 import { formatTime } from '../utils/format.js';
 import { showToast } from '../utils/toast.js';
 import AppIcon from '../components/AppIcon.vue';
+import { getDeviceStatus } from '../utils/deviceStatus.js';
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -104,11 +105,48 @@ const resetPassword = async () => {
 };
 const openUserDevices = async (user) => {
   deviceModal.user = user; deviceModal.devices = []; deviceModal.loading = true; deviceModal.visible = true;
-  try { deviceModal.devices = (await api.get(`/api/admin/users/${user.id}/devices`)).devices; }
+  try {
+    deviceModal.devices = (await api.get(`/api/admin/users/${user.id}/devices`)).devices;
+    deviceModal.devices.forEach(device => { device.onlineChecking = true; });
+    refreshUserDeviceStatuses(deviceModal.devices).catch(() => {
+      showToast('设备在线状态检测失败', 'error');
+    });
+  }
   catch (error) { showToast(error.message, 'error'); }
   finally { deviceModal.loading = false; }
 };
+const refreshUserDeviceStatuses = async (devices) => {
+  const batches = [];
+  for (let index = 0; index < devices.length; index += 10) batches.push(devices.slice(index, index + 10));
+
+  for (const batch of batches) {
+    try {
+      const result = await api.post('/api/devices/batchQueryStatus', {
+        deviceCodes: batch.map(device => device.deviceCode),
+        timeout: 5000,
+      });
+      const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
+      batch.forEach(device => {
+        const status = statusMap.get(device.deviceCode);
+        device.online = status?.success || status?.identityMismatch ? 1 : 0;
+        device.identityMismatch = Boolean(status?.identityMismatch);
+        device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
+        device.onlineChecking = false;
+      });
+    } catch {
+      batch.forEach(device => { device.onlineChecking = false; });
+    }
+  }
+};
 const openDeviceDetail = (device) => {
+  if (device.onlineChecking) {
+    showToast('正在检测设备状态，请稍后进入', 'info');
+    return;
+  }
+  if (getDeviceStatus(device).key === 'offline') {
+    showToast('设备离线，无法进入详情', 'error');
+    return;
+  }
   const detailDevice = {
     ...device,
     owner: device.owner || (deviceModal.user ? {
