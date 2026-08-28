@@ -48,7 +48,7 @@ const login = async () => {
     const data = await api.post('/api/users/login', form);
     if (data.user?.role !== 'admin') throw new Error('当前账号不是管理员，无权访问管理平台');
     saveSession(data);
-    await router.replace(String(route.query.redirect || '/dashboard'));
+    await router.replace(String(route.query.redirect || '/devices'));
   } catch (error) {
     clearSession();
     errorMessage.value = error.message;

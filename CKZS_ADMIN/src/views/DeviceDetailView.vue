@@ -275,12 +275,8 @@ const loadDevice = async () => {
   loading.value = true;
   try {
     const deviceCode = String(route.params.deviceCode || '');
-    const pageData = await api.get('/api/admin/devices', {
-      page: 1,
-      pageSize: 100,
-      keyword: deviceCode,
-    });
-    device.value = pageData.list.find(item => item.deviceCode === deviceCode) || null;
+    const passedDevice = history.state?.device;
+    device.value = passedDevice?.deviceCode === deviceCode ? { ...passedDevice } : null;
 
     if (!device.value) throw new Error('未找到该设备');
     editableName.value = device.value.remarkName || '';
@@ -309,8 +305,6 @@ const refreshState = async () => {
   commandBusy.value = true;
   try {
     const result = await sendCommand('$#');
-    device.value.identityMismatch = Boolean(result?.identityMismatch);
-    device.value.identityAbnormal = device.value.identityMismatch ? 1 : 0;
     const parsed = parseDeviceResponse(result, deviceState);
     Object.assign(deviceState, parsed.state);
     rawResponse.value = parsed.text;

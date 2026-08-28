@@ -23,7 +23,7 @@ const getStatusPayloadIdentity = (expectedDevice, payload) => {
   };
 };
 
-const isIdentityCheckCommand = (rawData) => /^\$(?:c|#)(?:\s|$)/i.test(String(rawData || '').trim());
+const isIdentityCheckCommand = (rawData) => /^\$c(?:\s|$)/i.test(String(rawData || '').trim());
 
 export const DeviceController = {
   async sendCommand(req, res) {

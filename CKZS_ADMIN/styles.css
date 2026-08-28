@@ -147,13 +147,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .device-cell strong { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .device-cell span { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .device-live-data { display: grid; gap: 4px; min-width: 78px; color: #596276; font-size: 11px; white-space: nowrap; }
+.device-status-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 74px; }
 .device-run-state { display: inline-flex; min-width: 52px; color: #596276; font-size: 12px; white-space: nowrap; }
 .device-run-state.running { color: #10865d; }
 .device-run-state.paused { color: #bb7017; }
 .device-run-state.returning, .device-run-state.unknown { color: #8b94a6; }
 .device-alarm { display: inline-block; max-width: 150px; overflow: hidden; color: #667185; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .device-alarm.abnormal { color: #d23b43; font-weight: 600; }
-.device-control-btn:disabled { color: #9ba4b4; cursor: not-allowed; }
+.text-btn.device-control-btn { min-width: 62px; height: 34px; padding: 0 12px; border: 1px solid #d8e1ff; border-radius: 8px; color: var(--primary); background: #f5f7ff; font-weight: 600; transition: .18s ease; }
+.text-btn.device-control-btn:hover:not(:disabled) { border-color: #b9c8fb; color: var(--primary); background: #eaf0ff; box-shadow: 0 3px 8px rgba(49,87,229,.12); transform: translateY(-1px); }
+.text-btn.device-control-btn:disabled { border-color: #e8ebf1; color: #9ba4b4; background: #f7f8fa; cursor: not-allowed; }
 .tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 .tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .tag.success { color: #10865d; background: #e9f8f2; }

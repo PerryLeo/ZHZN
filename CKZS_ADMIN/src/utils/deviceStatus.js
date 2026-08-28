@@ -29,7 +29,13 @@ export const getIdentityStatus = (device = {}) => {
     return { key: 'checking', label: '正在检测', tone: 'checking' };
   }
   if (Number(device.identityAbnormal) === 1 || device.identityMismatch === true) {
-    return { key: 'abnormal', label: '异常', tone: 'danger' };
+    return { key: 'abnormal', label: '设备异常', tone: 'danger' };
   }
-  return { key: 'normal', label: '正常', tone: 'success' };
+  return { key: 'normal', label: '设备正常', tone: 'success' };
+};
+
+export const getCombinedStatus = (device = {}) => {
+  const onlineStatus = getOnlineStatus(device);
+  if (!onlineStatus.isOnline) return [onlineStatus];
+  return [onlineStatus, getIdentityStatus(device)];
 };

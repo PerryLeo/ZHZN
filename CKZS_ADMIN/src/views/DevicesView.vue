@@ -26,10 +26,10 @@
 
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>设备状态</th><th>运行状态</th><th>实时数据</th><th>快捷控制</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>状态</th><th>运行状态</th><th>实时数据</th><th>快捷控制</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody>
-        <tr v-if="loading"><td colspan="11" class="empty-state">数据加载中...</td></tr>
-        <tr v-else-if="!pageData.list.length"><td colspan="11" class="empty-state">暂无符合条件的设备</td></tr>
+        <tr v-if="loading"><td colspan="10" class="empty-state">数据加载中...</td></tr>
+        <tr v-else-if="!pageData.list.length"><td colspan="10" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
           <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': !item.onlineChecking, 'device-row-disabled': item.onlineChecking }" @click="openDetail(item)">
             <td>
@@ -47,8 +47,7 @@
             </td>
             <td>{{ item.deviceName || '--' }}</td>
             <td>{{ item.owner?.username || '--' }}</td>
-            <td><span class="tag" :class="getOnlineStatus(item).tone">{{ getOnlineStatus(item).label }}</span></td>
-            <td><span class="tag" :class="getIdentityStatus(item).tone">{{ getIdentityStatus(item).label }}</span></td>
+            <td><div class="device-status-tags"><span v-for="status in getCombinedStatus(item)" :key="status.key" class="tag" :class="status.tone">{{ status.label }}</span></div></td>
             <td><span :class="['device-run-state', item.controlState]">{{ item.onlineChecking ? '检测中' : item.controlStateLabel || '状态未知' }}</span></td>
             <td><div class="device-live-data"><span>电量 {{ formatBattery(item.batteryLevel) }}</span><span>电流 {{ formatCurrent(item.chargingCurrent) }}</span></div></td>
             <td><button class="text-btn device-control-btn" type="button" :disabled="!canControlDevice(item)" @click.stop="handleDeviceAction(item)">{{ getDeviceActionLabel(item) }}</button></td>
@@ -118,7 +117,7 @@ import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import { api } from '../services/api.js';
 import { formatTime, typeLabel } from '../utils/format.js';
-import { getDeviceStatus, getIdentityStatus, getOnlineStatus } from '../utils/deviceStatus.js';
+import { getCombinedStatus, getDeviceStatus } from '../utils/deviceStatus.js';
 import { parseDeviceStatusReport } from '../utils/deviceProtocol.js';
 import { showToast } from '../utils/toast.js';
 
@@ -217,7 +216,7 @@ const openDetail = (device) => {
     showToast('设备离线，无法进入详情', 'error');
     return;
   }
-  router.push({ name: 'device-detail', params: { deviceCode: device.deviceCode } });
+  router.push({ name: 'device-detail', params: { deviceCode: device.deviceCode }, state: { device: { ...device } } });
 };
 const openDeviceForm = (device = null) => {
   deviceModal.editing = device;
