@@ -24,7 +24,7 @@ export const createDeviceState = () => ({
   abnormalStatus: '--',
   hasAlarm: false,
   controlState: 'unknown',
-  controlStateLabel: '状态未知',
+  controlStateLabel: '未知',
   timeSlots: Array.from({ length: 12 }, () => ({ time: '00:00', trips: 0 })),
 });
 
@@ -52,12 +52,13 @@ export const parseControlState = (rawState) => {
   }
   if (keyword === 'idle' || keyword === 'unreturn') return { controlState: 'idle', controlStateLabel: '空闲' };
   if (keyword === 'return' || keyword === 'returning') return { controlState: 'returning', controlStateLabel: '归位中' };
-  return { controlState: 'unknown', controlStateLabel: '状态未知' };
+  return { controlState: 'unknown', controlStateLabel: '未知' };
 };
 
 export const parseDeviceStatusReport = (payload) => {
   const text = extractResponseText(payload);
   const carMatch = text.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
+  const tripMatch = text.match(/(?:^|[|\r\n])\s*Trip\s*:\s*([^|\r\n]+)/i);
   const batteryAlarm = getStatusMetric(text, ['BatAlarm']);
   const fanAlarm = getStatusMetric(text, ['FanAlarm']);
   const batteryAlarmMap = { 1: '满', 2: '过流', 3: '拔出', 4: '过压', 5: '欠流', 6: '电池电压过低' };
@@ -69,6 +70,7 @@ export const parseDeviceStatusReport = (payload) => {
     batteryLevel: getStatusMetric(text, ['BatLevel']),
     chargingCurrent: getStatusMetric(text, ['I_Chg']),
     signalStrength: getStatusMetric(text, ['CSQ']),
+    tripProgress: tripMatch ? tripMatch[1].trim() : null,
     ...(carMatch ? parseControlState(carMatch[1]) : {}),
     abnormalStatus: batteryAlarm === null || fanAlarm === null ? '--' : (alarms.length ? alarms.join('；') : '无异常'),
     hasAlarm: alarms.length > 0,

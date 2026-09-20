@@ -11,6 +11,10 @@ const pendingCommands = new Map();
 // 硬件不回 ACK，第一条 data 上报即视为回执
 const pendingRawCommands = new Map();
 
+// OTA期间独占设备上行数据，避免普通状态上报/指令回包干扰升级ACK。
+// key: deviceCode, value: async (rawBuffer, meta) => boolean
+const otaDataHandlers = new Map();
+
 class MqttService {
   constructor() {
     this.client = null;
@@ -55,6 +59,22 @@ class MqttService {
   async _handleMessage(topic, raw) {
     const deviceCode = parseDeviceCode(topic);
     if (!deviceCode) return;
+
+    if (topic.startsWith('test/up/') && otaDataHandlers.has(deviceCode)) {
+      try { await Device.update({ updatedAt: new Date(), online: 1 }, { where: { deviceCode } }); } catch (_) {}
+      const otaHandler = otaDataHandlers.get(deviceCode);
+      try {
+        const consumed = await otaHandler(Buffer.from(raw), {
+          deviceCode,
+          topic,
+          timestamp: new Date().toISOString(),
+        });
+        if (consumed !== false) return;
+      } catch (err) {
+        console.error('❌ [OTA上行处理失败] '+deviceCode+':', err.message);
+        return;
+      }
+    }
 
     let payload = null;
     try { payload = JSON.parse(raw.toString()); } catch { payload = raw.toString(); }
@@ -237,6 +257,34 @@ class MqttService {
       });
     });
   }
+
+  /** OTA二进制帧下发，payload保持Buffer原样发送。*/
+  publishBinary(deviceCode, payload, qos = 1) {
+    if (!this.connected || !this.client) throw new Error('MQTT 未连接');
+    if (!Buffer.isBuffer(payload)) throw new Error('OTA payload 必须是 Buffer');
+    const topic = MQTT_TOPIC.COMMAND_DOWN(deviceCode);
+    return new Promise((resolve, reject) => {
+      this.client.publish(topic, payload, { qos }, (err) => {
+        if (err) reject(err);
+        else resolve({ topic, bytes: payload.length });
+      });
+    });
+  }
+
+  /** 注册单设备OTA独占上行处理器。*/
+  registerOtaDataHandler(deviceCode, handler) {
+    if (otaDataHandlers.has(deviceCode)) throw new Error('该设备正在升级中');
+    otaDataHandlers.set(deviceCode, handler);
+  }
+
+  unregisterOtaDataHandler(deviceCode, handler) {
+    if (!handler || otaDataHandlers.get(deviceCode) === handler) {
+      otaDataHandlers.delete(deviceCode);
+    }
+  }
+
+  isOtaBusy(deviceCode) { return otaDataHandlers.has(deviceCode); }
+  hasPendingRawCommand(deviceCode) { return pendingRawCommands.has(deviceCode); }
 
   isConnected() { return this.connected; }
   disconnect() { if (this.client) { this.client.end(true); this.connected = false; } }

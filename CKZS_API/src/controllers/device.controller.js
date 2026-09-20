@@ -36,6 +36,7 @@ export const DeviceController = {
       if (!device) return fail(res, '设备不存在', 404);
       if (!device.userId || device.status !== 1) return fail(res, '设备未绑定，请先绑定设备');
       if (device.online !== 1) return fail(res, '设备离线，无法下发指令', 409);
+      if (mqttService.isOtaBusy(deviceCode)) return fail(res, '设备正在升级，暂时无法下发其他指令', 409);
 
       const operator = await User.findByPk(req.user.id, { attributes: ['id', 'role'] });
       const isAdmin = operator?.role === 'admin';
@@ -104,6 +105,9 @@ export const DeviceController = {
       if (allowedDevices.length !== uniqueCodes.length) {
         return fail(res, '部分设备不存在、未绑定、离线或无操作权限', 403);
       }
+      if (uniqueCodes.some(code => mqttService.isOtaBusy(code))) {
+        return fail(res, '部分设备正在升级，暂时无法批量下发指令', 409);
+      }
 
       // 纯异步 fire-and-forget：并发 publish 到各设备 MQTT topic，不等回执
       const total = uniqueCodes.length;
@@ -151,6 +155,9 @@ export const DeviceController = {
       });
       if (allowedDevices.length !== uniqueCodes.length) {
         return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
+      }
+      if (uniqueCodes.some(code => mqttService.isOtaBusy(code))) {
+        return fail(res, '部分设备正在升级，暂时无法查询状态', 409);
       }
 
       const settled = await Promise.allSettled(

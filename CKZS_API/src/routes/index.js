@@ -3,6 +3,7 @@ import userRoutes from './user.routes.js';
 import deviceRoutes from './device.routes.js';
 import adminRoutes from './admin.routes.js';
 import deviceGroupRoutes from './deviceGroup.routes.js';
+import otaRoutes from './ota.routes.js';
 
 const router = Router();
 
@@ -11,6 +12,7 @@ router.use('/users', userRoutes);
 router.use('/devices', deviceRoutes);
 router.use('/admin', adminRoutes);
 router.use('/device-groups', deviceGroupRoutes);
+router.use('/ota', otaRoutes);
 
 // 后续可扩展更多模块，例如:
 // router.use('/orders', orderRoutes);

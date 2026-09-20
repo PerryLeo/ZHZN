@@ -101,6 +101,12 @@
                     <text class="device-state-caption">状态</text>
                     <text class="device-state-value" :class="item.runState">{{ item.runStateLabel }}</text>
                   </view>
+                  <view v-if="item.tripProgress && item.tripProgress !== '--'" class="device-trip-fraction" :class="item.runState" aria-label="完成度">
+                    <text>{{ getTripProgressPart(item.tripProgress, 0) }}</text>
+                    <view class="device-trip-bar"></view>
+                    <text>{{ getTripProgressPart(item.tripProgress, 1) }}</text>
+                  </view>
+                  <text v-else class="device-trip-empty" :class="item.runState">--</text>
                   <view
                     class="device-action-button"
                     :class="{
@@ -131,7 +137,7 @@
                 </view>
                 <view class="metric-divider"></view>
                 <view class="bound-metric">
-                  <text class="metric-label">电流</text>
+                  <text class="metric-label">充电电流</text>
                   <text :class="['metric-value', getMetricValueClass(item.current, 'current')]">{{ formatMetric(item.current, 'A') }}</text>
                 </view>
               </view>
@@ -532,6 +538,8 @@ const getCsqSignalLevel = (value) => {
   return 0;
 };
 
+const getTripProgressPart = (value, index) => String(value || '--').split('/')[index] || '--';
+
 const parseRunState = (rawData) => {
   const raw = String(rawData || '');
   const carMatch = raw.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
@@ -553,7 +561,7 @@ const parseRunState = (rawData) => {
   if (stateKeyword === 'return' || stateKeyword === 'returning') {
     return { runState: 'returning', runStateLabel: '归位中' };
   }
-  return { runState: 'unknown', runStateLabel: '状态未知' };
+    return { runState: 'unknown', runStateLabel: '未知' };
 };
 
 const formatAbnormalStatus = (rawData) => {
@@ -579,10 +587,12 @@ const formatAbnormalStatus = (rawData) => {
 
 const parseDeviceMetrics = (result) => {
   const rawData = typeof result?.data === 'string' ? result.data : '';
+  const tripMatch = rawData.match(/(?:^|[|\r\n])\s*Trip\s*:\s*([^|\r\n]+)/i);
   return {
     battery: findMetricValue(rawData, ['BatLevel']),
     current: findMetricValue(rawData, ['I_Chg']),
     csq: findMetricValue(rawData, ['CSQ']),
+    tripProgress: tripMatch ? tripMatch[1].trim() : '--',
     ...formatAbnormalStatus(rawData),
     ...parseRunState(rawData),
     rawData,
@@ -600,6 +610,7 @@ const fetchBoundDeviceStatuses = async (devices) => {
     device.identityMismatch = false;
     device.csq = null;
     device.csqSignalLevel = 0;
+    device.tripProgress = '--';
     if (['异常', '身份异常', '设备身份异常'].includes(device.abnormalStatus)) {
       device.abnormalStatus = '--';
       device.hasAlarm = false;
@@ -621,7 +632,7 @@ const fetchBoundDeviceStatuses = async (devices) => {
           device.online = 0;
           device.statusError = status?.error || '设备状态获取失败';
           device.runState = 'unknown';
-          device.runStateLabel = '状态未知';
+          device.runStateLabel = '未知';
           return;
         }
         device.online = 1;
@@ -634,6 +645,7 @@ const fetchBoundDeviceStatuses = async (devices) => {
         device.hasAlarm = metrics.hasAlarm;
         device.runState = metrics.runState;
         device.runStateLabel = metrics.runStateLabel;
+        device.tripProgress = metrics.tripProgress;
         device.rawStatusData = metrics.rawData;
         device.statusTimestamp = metrics.timestamp;
       });
@@ -641,7 +653,7 @@ const fetchBoundDeviceStatuses = async (devices) => {
       currentDevices.forEach(device => {
         device.online = 0;
         device.runState = 'unknown';
-        device.runStateLabel = '状态未知';
+        device.runStateLabel = '未知';
         device.statusError = typeof error === 'string' ? error : '设备状态获取失败';
       });
     } finally {
@@ -754,6 +766,7 @@ const fetchBoundDevices = async ({ throwOnError = false, refreshSummaryAfterStat
       statusTimestamp: '',
       runState: 'unknown',
       runStateLabel: '检测中',
+      tripProgress: '--',
       switchLoading: false
     }));
     // 卡片先显示，再异步查询当前页设备的实时状态；查询结果会同步回顶部汇总。
@@ -1736,6 +1749,58 @@ const toBoundDevice = (item) => {
   &.unknown {
     color: #98A2B3;
   }
+}
+
+.device-trip-fraction {
+  margin-left: 8rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+  min-width: 24rpx;
+  height: 52rpx;
+  color: #6B7280;
+  font-size: 20rpx;
+  line-height: 20rpx;
+}
+
+.device-trip-fraction.running,
+.device-trip-empty.running {
+  color: #E58A13;
+}
+
+.device-trip-fraction.paused,
+.device-trip-empty.paused {
+  color: #3A8DFF;
+}
+
+.device-trip-fraction.returning,
+.device-trip-empty.returning {
+  color: #C88124;
+}
+
+.device-trip-fraction.unknown,
+.device-trip-empty.unknown {
+  color: #98A2B3;
+}
+
+.device-trip-fraction text {
+  min-width: 24rpx;
+  text-align: center;
+}
+
+.device-trip-bar {
+  width: 24rpx;
+  height: 1rpx;
+  background: currentColor;
+}
+
+.device-trip-empty {
+  margin-left: 8rpx;
+  color: #6B7280;
+  font-size: 20rpx;
+  line-height: 1;
 }
 
 .device-action-button {

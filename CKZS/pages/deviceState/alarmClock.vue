@@ -375,6 +375,7 @@ const syncTime = () => {
     width: 100%;
     height: 280rpx;
     background: radial-gradient(circle at top right, $primary-color, $primary-dark);
+    border-radius: 0 0 48rpx 48rpx;
     z-index: 0;
 }
 

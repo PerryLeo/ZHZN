@@ -10,6 +10,7 @@ tags:
   - name: 用户
   - name: 设备
   - name: 设备分组
+  - name: OTA升级
   - name: 管理端
   - name: 系统
 paths:
@@ -188,6 +189,49 @@ paths:
       responses:
         '201': { $ref: '#/components/responses/JsonResponse' }
 
+  /api/ota/start:
+    post:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: startOtaTask
+      summary: 创建单设备 OTA 升级任务
+      description: >-
+        为当前用户已绑定且在线的设备创建 OTA 升级任务。管理员可以操作其他用户的设备。
+        固件必须已上传至服务器 OTA_FIRMWARE_DIR，客户端只传文件名。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/StartOtaRequest'
+      responses:
+        '202':
+          description: 升级任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtaTaskResponse'
+        '400': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+        '404': { $ref: '#/components/responses/JsonResponse' }
+        '409': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/tasks/{taskId}:
+    get:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: getOtaTask
+      summary: 查询 OTA 升级任务
+      description: 查询升级状态和传输进度。success 仅表示已发送重启指令，不代表重启后的新固件已验证成功。
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TaskId' }
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtaTaskResponse'
+        '403': { $ref: '#/components/responses/JsonResponse' }
+        '404': { $ref: '#/components/responses/JsonResponse' }
+
   /api/admin/dashboard:
     get:
       tags: [管理端]
@@ -361,6 +405,12 @@ components:
       required: false
       description: 按绑定用户 ID 筛选
       schema: { type: integer, minimum: 1 }
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      description: 创建 OTA 任务时返回的任务 ID
+      schema: { type: string, format: uuid }
   requestBodies:
     RegisterRequest:
       required: true
@@ -520,6 +570,25 @@ components:
             required: [userId]
             properties:
               userId: { type: integer, minimum: 1, description: 要绑定的用户 ID }
+    StartOtaRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceCode, firmwareFile]
+            properties:
+              deviceCode:
+                type: string
+                minLength: 1
+                description: 需要升级的设备 IMEI 或设备编码
+                example: '860123456789012'
+              firmwareFile:
+                type: string
+                minLength: 5
+                pattern: '^[^/\\]+\.bin$'
+                description: OTA_FIRMWARE_DIR 目录内的固件文件名，不能包含路径
+                example: lobster-feeder.bin
     JsonObject:
       required: false
       content:
@@ -537,3 +606,28 @@ components:
     AnyObject:
       type: object
       additionalProperties: true
+    OtaTask:
+      type: object
+      required: [id, deviceCode, firmwareFile, status, progress, offset, message, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        deviceCode: { type: string, description: 设备 IMEI 或设备编码 }
+        firmwareFile: { type: string, example: lobster-feeder.bin }
+        firmwareSize: { type: [integer, 'null'], minimum: 0, description: 固件字节数 }
+        firmwareSha256: { type: [string, 'null'], description: 服务端读取固件后计算的 SHA-256 }
+        status:
+          type: string
+          enum: [pending, starting, transferring, verifying, rebooting, success, failed]
+        progress: { type: number, minimum: 0, maximum: 100 }
+        offset: { type: integer, minimum: 0, description: 已确认传输的字节偏移 }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    OtaTaskResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code: { type: integer, const: 0 }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/OtaTask' }

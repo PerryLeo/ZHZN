@@ -26,10 +26,10 @@
 
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>身份状态</th><th>运行状态</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>身份状态</th><th>运行状态</th><th>完成度</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody>
-        <tr v-if="loading"><td colspan="13" class="empty-state">数据加载中...</td></tr>
-        <tr v-else-if="!pageData.list.length"><td colspan="13" class="empty-state">暂无符合条件的设备</td></tr>
+        <tr v-if="loading"><td colspan="14" class="empty-state">数据加载中...</td></tr>
+        <tr v-else-if="!pageData.list.length"><td colspan="14" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
           <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': !item.onlineChecking, 'device-row-disabled': item.onlineChecking }" @click="openDetail(item)">
             <td>
@@ -56,9 +56,10 @@
               </span>
             </td>
             <td><span class="tag" :class="getIdentityStatus(item).tone">{{ getIdentityStatus(item).label }}</span></td>
-            <td><span :class="['device-run-state', item.controlState]">{{ item.onlineChecking ? '检测中' : item.controlStateLabel || '状态未知' }}</span></td>
+            <td><span :class="['device-run-state', item.controlState]">{{ item.onlineChecking ? '检测中' : item.controlStateLabel || '未知' }}</span></td>
+            <td><span class="device-trip-progress">{{ item.onlineChecking ? '检测中' : item.tripProgress || '--' }}</span></td>
             <td><button class="text-btn device-control-btn" type="button" :disabled="!canControlDevice(item)" @click.stop="handleDeviceAction(item)">{{ getDeviceActionLabel(item) }}</button></td>
-            <td><div class="device-live-data"><span>电量 {{ formatBattery(item.batteryLevel) }}</span><span>电流 {{ formatCurrent(item.chargingCurrent) }}</span></div></td>
+            <td><div class="device-live-data"><span>电量 {{ formatBattery(item.batteryLevel) }}</span><span>充电电流 {{ formatCurrent(item.chargingCurrent) }}</span></div></td>
             <td><span :class="['device-alarm', { abnormal: item.hasAlarm }]">{{ item.onlineChecking ? '检测中' : item.abnormalStatus || '--' }}</span></td>
             <td><span class="tag" :class="item.status === 1 ? 'success' : 'neutral'">{{ item.status === 1 ? '已绑定' : '未绑定' }}</span></td>
             <td>{{ formatTime(item.updatedAt) }}</td>
