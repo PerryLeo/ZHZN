@@ -12,6 +12,8 @@ const FIRMWARE_DIR = path.resolve(process.env.OTA_FIRMWARE_DIR || '/opt/ota/firm
 const CHUNK_SIZE = Math.min(Math.max(Number(process.env.OTA_CHUNK_SIZE) || 1024, 64), 2048);
 const ACK_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_ACK_TIMEOUT_MS) || 2000, 500), 30000);
 const BEGIN_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_BEGIN_TIMEOUT_MS) || 8000, 1000), 60000);
+const OTA_MODE_SETTLE_MS = Math.min(Math.max(Number(process.env.OTA_MODE_SETTLE_MS ?? 500), 0), 5000);
+const BEGIN_MAX_ATTEMPTS = Math.min(Math.max(Number(process.env.OTA_BEGIN_MAX_ATTEMPTS) || 2, 1), 3);
 const END_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_END_TIMEOUT_MS) || 15000, 1000), 120000);
 const MAX_RETRY = Math.min(Math.max(Number(process.env.OTA_MAX_RETRY) || 3, 1), 10);
 const MAX_TASKS = 500;
@@ -146,6 +148,8 @@ const sendAndWait = async (deviceCode, payload, receiver, matcher, timeoutMs) =>
   return responsePromise;
 };
 
+const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
 const executeTask = async (task, firmwarePath, receiver, otaHandler) => {
   try {
     task.status = 'starting';
@@ -164,19 +168,40 @@ const executeTask = async (task, firmwarePath, receiver, otaHandler) => {
       line => line.toLowerCase().startsWith('ok'),
       5000
     );
+    console.info(`[OTA] task=${task.id} device=${task.deviceCode} received Ok for $F; waiting ${OTA_MODE_SETTLE_MS}ms before BEGIN`);
+    if (OTA_MODE_SETTLE_MS > 0) await delay(OTA_MODE_SETTLE_MS);
 
     const beginPayload = Buffer.alloc(6);
     beginPayload.writeUInt32LE(firmware.length, 0);
     beginPayload.writeUInt16LE(firmwareCrc, 4);
     task.status = 'transferring';
     task.message = '正在初始化固件传输';
-    await sendAndWait(
-      task.deviceCode,
-      buildFrame(TYPE_BEGIN, 0, beginPayload),
-      receiver,
-      line => line === 'OTA:ACK:0',
-      BEGIN_TIMEOUT_MS
-    );
+    const beginFrame = buildFrame(TYPE_BEGIN, 0, beginPayload);
+    let beginAcknowledged = false;
+    for (let attempt = 1; attempt <= BEGIN_MAX_ATTEMPTS && !beginAcknowledged; attempt += 1) {
+      console.info(`[OTA] task=${task.id} device=${task.deviceCode} BEGIN attempt=${attempt}/${BEGIN_MAX_ATTEMPTS} bytes=${beginFrame.length} firmwareSize=${firmware.length} firmwareCrc=${firmwareCrc.toString(16).padStart(4, '0')} frameHex=${beginFrame.toString('hex')}`);
+      let response;
+      try {
+        response = await sendAndWait(
+          task.deviceCode,
+          beginFrame,
+          receiver,
+          line => line === 'OTA:ACK:0' || line === 'OTA:RETRY:0',
+          BEGIN_TIMEOUT_MS
+        );
+      } catch (error) {
+        if (!/等待设备OTA应答超时/.test(error.message) || attempt >= BEGIN_MAX_ATTEMPTS) throw error;
+        console.warn(`[OTA] task=${task.id} device=${task.deviceCode} no BEGIN response; retrying attempt ${attempt + 1}/${BEGIN_MAX_ATTEMPTS}`);
+        continue;
+      }
+
+      console.info(`[OTA] task=${task.id} device=${task.deviceCode} BEGIN response=${response}`);
+      if (response === 'OTA:ACK:0') beginAcknowledged = true;
+      else if (attempt >= BEGIN_MAX_ATTEMPTS) {
+        throw new Error('设备连续返回 OTA:RETRY:0，BEGIN 帧未通过设备校验');
+      }
+    }
+    if (!beginAcknowledged) throw new Error('设备未确认 BEGIN 帧');
 
     let offset = 0;
     while (offset < firmware.length) {

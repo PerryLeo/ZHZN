@@ -15,12 +15,18 @@ OTA_FIRMWARE_DIR=/opt/ota/firmware
 OTA_CHUNK_SIZE=1024
 OTA_ACK_TIMEOUT_MS=2000
 OTA_BEGIN_TIMEOUT_MS=8000
+OTA_MODE_SETTLE_MS=500
+OTA_BEGIN_MAX_ATTEMPTS=2
 OTA_END_TIMEOUT_MS=15000
 OTA_MAX_RETRY=3
 ```
 
 `OTA_CHUNK_SIZE` 的有效范围为 `64-2048`；超过 `2048` 会自动限制为
 `2048`，以匹配 MCU 的单帧 payload 上限。
+
+收到 `$F` 的 `Ok` 后，服务端默认等待 `500ms` 再发送 BEGIN。BEGIN 超时或设备返回
+`OTA:RETRY:0` 时，服务端最多发送 2 次相同的 BEGIN 帧；日志会记录 BEGIN 十六进制内容
+及设备的 ACK/RETRY 响应，便于区分发布和设备解析问题。
 
 ## 创建升级任务
 
