@@ -266,7 +266,12 @@ class MqttService {
     return new Promise((resolve, reject) => {
       this.client.publish(topic, payload, { qos }, (err) => {
         if (err) reject(err);
-        else resolve({ topic, bytes: payload.length });
+        else {
+          const loggedBytes = payload.subarray(0, Math.min(payload.length, 32));
+          const truncated = payload.length > loggedBytes.length ? '...(truncated)' : '';
+          console.info(`📤 [OTA下行Broker确认] device=${deviceCode} topic=${topic} qos=${qos} bytes=${payload.length} hex=${loggedBytes.toString('hex')}${truncated}`);
+          resolve({ topic, bytes: payload.length });
+        }
       });
     });
   }

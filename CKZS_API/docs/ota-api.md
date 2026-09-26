@@ -28,6 +28,11 @@ OTA_MAX_RETRY=3
 `OTA:RETRY:0` 时，服务端最多发送 2 次相同的 BEGIN 帧；日志会记录 BEGIN 十六进制内容
 及设备的 ACK/RETRY 响应，便于区分发布和设备解析问题。
 
+排查单设备 OTA 时，PM2 日志中的 `[OTA下行Broker确认]` 表示 MQTT Broker 已确认服务端
+发布；它不能单独证明 MCU 已收到。`[OTA原始上行]` 会记录 OTA 活跃期间设备发到
+`test/up/{deviceCode}` 的 MQTT 原始数据（最多记录前 512 字节），包含十六进制及转义文本。
+如果 DTU 没有把 MCU 串口数据转发到该上行 Topic，服务端日志也无法看到串口内容。
+
 ## 创建升级任务
 
 `POST /api/ota/start`

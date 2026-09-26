@@ -16,6 +16,7 @@ const OTA_MODE_SETTLE_MS = Math.min(Math.max(Number(process.env.OTA_MODE_SETTLE_
 const BEGIN_MAX_ATTEMPTS = Math.min(Math.max(Number(process.env.OTA_BEGIN_MAX_ATTEMPTS) || 2, 1), 3);
 const END_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_END_TIMEOUT_MS) || 15000, 1000), 120000);
 const MAX_RETRY = Math.min(Math.max(Number(process.env.OTA_MAX_RETRY) || 3, 1), 10);
+const OTA_UPLINK_LOG_MAX_BYTES = 512;
 const MAX_TASKS = 500;
 
 const tasks = new Map();
@@ -285,7 +286,12 @@ const otaService = {
     if (activeTasks.has(deviceCode) || mqttService.isOtaBusy(deviceCode)) throw new Error('该设备正在升级中');
     if (mqttService.hasPendingRawCommand(deviceCode)) throw new Error('设备正在处理上一条指令，请稍后再升级');
     const receiver = createLineReceiver();
-    const otaHandler = raw => receiver.onData(raw);
+    const otaHandler = (raw, meta) => {
+      const loggedBytes = raw.subarray(0, Math.min(raw.length, OTA_UPLINK_LOG_MAX_BYTES));
+      const truncated = raw.length > loggedBytes.length ? '...(truncated)' : '';
+      console.info(`[OTA原始上行] device=${deviceCode} topic=${meta?.topic || `test/up/${deviceCode}`} bytes=${raw.length} hex=${loggedBytes.toString('hex')}${truncated} text=${JSON.stringify(loggedBytes.toString('utf8'))}`);
+      return receiver.onData(raw);
+    };
     mqttService.registerOtaDataHandler(deviceCode, otaHandler);
     pruneTasks();
     const task = {
