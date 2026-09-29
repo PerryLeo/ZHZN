@@ -218,7 +218,7 @@ paths:
       x-apifox-folder: OTA升级
       operationId: getOtaTask
       summary: 查询 OTA 升级任务
-      description: 查询升级状态和传输进度。success 仅表示已发送重启指令，不代表重启后的新固件已验证成功。
+      description: 查询升级状态和传输进度。当前硬件联调会在设备返回 OTA:READY 后跳过 $G；success 表示固件传输和校验完成，不表示设备已重启或运行了新固件。
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/TaskId' }
