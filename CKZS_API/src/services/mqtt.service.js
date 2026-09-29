@@ -14,6 +14,10 @@ const pendingRawCommands = new Map();
 // OTA期间独占设备上行数据，避免普通状态上报/指令回包干扰升级ACK。
 // key: deviceCode, value: async (rawBuffer, meta) => boolean
 const otaDataHandlers = new Map();
+// OTA结束后短暂保留设备上行原文，便于判断重启指令后的MCU反馈。
+const postOtaUplinkLoggers = new Map();
+const POST_OTA_UPLINK_LOG_WINDOW_MS = 30000;
+const POST_OTA_UPLINK_LOG_MAX_BYTES = 512;
 
 class MqttService {
   constructor() {
@@ -73,6 +77,16 @@ class MqttService {
       } catch (err) {
         console.error('❌ [OTA上行处理失败] '+deviceCode+':', err.message);
         return;
+      }
+    }
+
+    if (topic.startsWith('test/up/')) {
+      const postOtaLogger = postOtaUplinkLoggers.get(deviceCode);
+      if (postOtaLogger) {
+        postOtaLogger.received = true;
+        const loggedBytes = raw.subarray(0, Math.min(raw.length, POST_OTA_UPLINK_LOG_MAX_BYTES));
+        const truncated = raw.length > loggedBytes.length ? '...(truncated)' : '';
+        console.info(`[OTA重启后MCU上行] task=${postOtaLogger.taskId} device=${deviceCode} topic=${topic} bytes=${raw.length} hex=${loggedBytes.toString('hex')}${truncated} text=${JSON.stringify(loggedBytes.toString('utf8'))}`);
       }
     }
 
@@ -279,7 +293,31 @@ class MqttService {
   /** 注册单设备OTA独占上行处理器。*/
   registerOtaDataHandler(deviceCode, handler) {
     if (otaDataHandlers.has(deviceCode)) throw new Error('该设备正在升级中');
+    this.stopPostOtaUplinkLogging(deviceCode);
     otaDataHandlers.set(deviceCode, handler);
+  }
+
+  /** $G下发后采集一段时间的设备上行原文，不拦截正常数据处理。*/
+  watchPostOtaUplinks(deviceCode, taskId) {
+    this.stopPostOtaUplinkLogging(deviceCode);
+    const logger = { taskId, received: false, timer: null };
+    logger.timer = setTimeout(() => {
+      if (postOtaUplinkLoggers.get(deviceCode) !== logger) return;
+      postOtaUplinkLoggers.delete(deviceCode);
+      if (!logger.received) {
+        console.warn(`[OTA重启后MCU上行] task=${taskId} device=${deviceCode} ${POST_OTA_UPLINK_LOG_WINDOW_MS}ms内未收到设备上行`);
+      }
+    }, POST_OTA_UPLINK_LOG_WINDOW_MS);
+    logger.timer.unref?.();
+    postOtaUplinkLoggers.set(deviceCode, logger);
+    console.info(`[OTA重启后MCU上行] task=${taskId} device=${deviceCode} 开始采集，窗口=${POST_OTA_UPLINK_LOG_WINDOW_MS}ms`);
+  }
+
+  stopPostOtaUplinkLogging(deviceCode) {
+    const logger = postOtaUplinkLoggers.get(deviceCode);
+    if (!logger) return;
+    clearTimeout(logger.timer);
+    postOtaUplinkLoggers.delete(deviceCode);
   }
 
   unregisterOtaDataHandler(deviceCode, handler) {

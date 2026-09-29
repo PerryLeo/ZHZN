@@ -253,6 +253,7 @@ const executeTask = async (task, firmwarePath, receiver, otaHandler) => {
     task.status = 'rebooting';
     task.message = '设备正在重启';
     await mqttService.publishBinary(task.deviceCode, Buffer.from('$G\n', 'ascii'));
+    mqttService.watchPostOtaUplinks(task.deviceCode, task.id);
 
     task.status = 'success';
     task.progress = 100;
