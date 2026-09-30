@@ -118,6 +118,13 @@
                         </view>
                     </view>
                     <view class="setting-item">
+                        <text class="label">OTA升级</text>
+                        <view class="right-box">
+                            <button class="ota-update-button" size="mini" :loading="otaStarting" :disabled="otaStarting"
+                                @click="handleOtaUpdate">更新</button>
+                        </view>
+                    </view>
+                    <view class="setting-item">
                         <text class="label">设备版本</text>
                         <view class="right-box">
                             <text class="value">{{ version }}</text>
@@ -213,6 +220,7 @@ const customCmd = ref('');
 const responseModalVisible = ref(false);
 const responseContent = ref('');
 const modeModalVisible = ref(false);
+const otaStarting = ref(false);
 
 onLoad((options) => {
     if (options.deviceCode) deviceCode.value = decodeURIComponent(options.deviceCode);
@@ -253,6 +261,26 @@ onLoad((options) => {
 });
 
 const goBack = () => uni.navigateBack();
+
+const handleOtaUpdate = async () => {
+    if (!deviceCode.value || otaStarting.value) {
+        if (!deviceCode.value) uni.showToast({ title: '未获取到设备编号', icon: 'none' });
+        return;
+    }
+
+    otaStarting.value = true;
+    try {
+        const result = await http.post('/api/ota/start', {
+            deviceCode: deviceCode.value,
+            firmwareFile: 'lobster-feeder.pkg'
+        });
+        uni.showToast({ title: result?.message || '升级任务已创建', icon: 'none', duration: 2500 });
+    } catch (error) {
+        uni.showToast({ title: typeof error === 'string' ? error : '创建OTA升级任务失败', icon: 'none', duration: 3000 });
+    } finally {
+        otaStarting.value = false;
+    }
+};
 
 const sendNetworkCommand = (data, timeout = 10000) => {
     return http.post('/api/devices/command', {
@@ -566,6 +594,21 @@ const confirmDelete = () => {
             color: #ccc;
         }
     }
+}
+
+.ota-update-button {
+    margin: 0;
+    padding: 0 24rpx;
+    height: 56rpx;
+    line-height: 56rpx;
+    border-radius: 28rpx;
+    background: $primary-color;
+    color: #fff;
+    font-size: 26rpx;
+}
+
+.ota-update-button::after {
+    border: none;
 }
 
 .bottom-placeholder {

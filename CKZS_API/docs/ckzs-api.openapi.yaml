@@ -586,9 +586,9 @@ components:
               firmwareFile:
                 type: string
                 minLength: 5
-                pattern: '^[^/\\]+\.bin$'
+                pattern: '^[^/\\]+\.(bin|pkg)$'
                 description: OTA_FIRMWARE_DIR 目录内的固件文件名，不能包含路径
-                example: lobster-feeder.bin
+                example: lobster-feeder.pkg
     JsonObject:
       required: false
       content:
@@ -612,7 +612,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         deviceCode: { type: string, description: 设备 IMEI 或设备编码 }
-        firmwareFile: { type: string, example: lobster-feeder.bin }
+        firmwareFile: { type: string, example: lobster-feeder.pkg }
         firmwareSize: { type: [integer, 'null'], minimum: 0, description: 固件字节数 }
         firmwareSha256: { type: [string, 'null'], description: 服务端读取固件后计算的 SHA-256 }
         status:

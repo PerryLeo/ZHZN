@@ -42,7 +42,7 @@ OTA_MAX_RETRY=3
 ```json
 {
   "deviceCode": "设备IMEI",
-  "firmwareFile": "lobster-feeder.bin"
+  "firmwareFile": "lobster-feeder.pkg"
 }
 ```
 

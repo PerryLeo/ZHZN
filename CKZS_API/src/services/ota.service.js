@@ -65,8 +65,9 @@ const publicTask = (task) => ({
 
 const resolveFirmware = async (firmwareFile) => {
   const normalizedName = String(firmwareFile || '').trim();
-  if (!normalizedName || path.basename(normalizedName) !== normalizedName || !normalizedName.toLowerCase().endsWith('.bin')) {
-    throw new Error('firmwareFile 必须是固件目录中的 .bin 文件名');
+  const lowerCaseName = normalizedName.toLowerCase();
+  if (!normalizedName || path.basename(normalizedName) !== normalizedName || (!lowerCaseName.endsWith('.bin') && !lowerCaseName.endsWith('.pkg'))) {
+    throw new Error('firmwareFile 必须是固件目录中的 .bin 或 .pkg 文件名');
   }
 
   const firmwarePath = path.resolve(FIRMWARE_DIR, normalizedName);
