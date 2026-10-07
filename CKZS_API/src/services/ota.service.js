@@ -10,7 +10,7 @@ const TYPE_END = 0x03;
 const FIRMWARE_DIR = path.resolve(process.env.OTA_FIRMWARE_DIR || '/opt/ota/firmware');
 // MCU 的 OTA_FRAME_MAX_PAYLOAD 固定为 2048，服务端不能配置得更大。
 const CHUNK_SIZE = Math.min(Math.max(Number(process.env.OTA_CHUNK_SIZE) || 1024, 64), 2048);
-const ACK_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_ACK_TIMEOUT_MS) || 2000, 500), 30000);
+const ACK_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_ACK_TIMEOUT_MS) || 5000, 500), 30000);
 const BEGIN_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_BEGIN_TIMEOUT_MS) || 8000, 1000), 60000);
 const OTA_MODE_SETTLE_MS = Math.min(Math.max(Number(process.env.OTA_MODE_SETTLE_MS ?? 500), 0), 5000);
 const BEGIN_MAX_ATTEMPTS = Math.min(Math.max(Number(process.env.OTA_BEGIN_MAX_ATTEMPTS) || 2, 1), 3);

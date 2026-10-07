@@ -282,7 +282,7 @@ const sendInitCommand = () => {
         } else {
             isRefreshing.value = false;
             uni.hideLoading();
-            uni.showToast({ title: '蓝牙未连接', icon: 'none' });
+            uni.showToast({ title: '蓝牙未连接', icon: 'none', duration: 2000 });
         }
     } catch (e) {
         isRefreshing.value = false;
@@ -294,6 +294,10 @@ const bindDeviceByIdentity = async () => {
     if (!state.deviceCode || !state.initialName || bindingDeviceCode === state.deviceCode) return;
     if (!uni.getStorageSync(TOKEN_KEY)) return;
     bindingDeviceCode = state.deviceCode;
+    console.info('[设备绑定] 开始绑定', {
+        deviceCode: state.deviceCode,
+        deviceName: state.initialName,
+    });
     try {
         const device = await http.post('/api/users/bindDevice', {
             deviceCode: state.deviceCode,
@@ -301,6 +305,11 @@ const bindDeviceByIdentity = async () => {
         });
         state.remarkName = device?.remarkName || state.initialName;
         pageTitle.value = state.remarkName;
+        console.info('[设备绑定] 绑定成功', {
+            deviceCode: state.deviceCode,
+            userId: device?.userId,
+            status: device?.status,
+        });
         const savedDevices = uni.getStorageSync('SAVED_BLUETOOTH_DEVICES') || [];
         const savedDevice = savedDevices.find(item => item.mac === state.mac);
         if (savedDevice) {
@@ -311,7 +320,12 @@ const bindDeviceByIdentity = async () => {
         }
     } catch (error) {
         bindingDeviceCode = '';
-        uni.showToast({ title: typeof error === 'string' ? error : '设备绑定失败', icon: 'none' });
+        console.error('[设备绑定] 绑定失败', {
+            deviceCode: state.deviceCode,
+            deviceName: state.initialName,
+            error,
+        });
+        uni.showToast({ title: typeof error === 'string' ? error : '设备绑定失败', icon: 'none', duration: 2000 });
     }
 };
 
@@ -444,6 +458,7 @@ const parseLine = (line) => {
     const imeiMatch = line.match(/^DTU_IMEI:\s*([0-9A-Za-z-]+)/i);
     if (imeiMatch) {
         state.deviceCode = imeiMatch[1];
+        console.info('[设备身份] 收到 DTU_IMEI', { deviceCode: state.deviceCode, line });
         bindDeviceByIdentity();
         return;
     }
@@ -500,7 +515,8 @@ const sendBluetoothCommand = (command) => {
         outputStream.flush();
         return true;
     } catch (error) {
-        uni.showToast({ title: '蓝牙指令发送失败', icon: 'none' });
+        console.error('[蓝牙指令] 发送失败', error);
+        uni.showToast({ title: '蓝牙指令发送失败', icon: 'none', duration: 2000 });
         return false;
     }
 };
@@ -515,7 +531,7 @@ const getDeviceControlLabel = () => {
 const handleDeviceControl = async () => {
     if (state.controlLoading) return;
     if (state.controlState === 'unknown' || state.controlState === 'returning') {
-        uni.showToast({ title: state.controlState === 'returning' ? '设备归位中，请稍后操作' : '设备状态未确认，暂不可操作', icon: 'none' });
+        uni.showToast({ title: state.controlState === 'returning' ? '设备归位中，请稍后操作' : '设备状态未确认，暂不可操作', icon: 'none', duration: 2000 });
         return;
     }
     const action = state.controlState === 'running' ? 'pause' : 'start';
@@ -525,7 +541,7 @@ const handleDeviceControl = async () => {
     state.controlLoading = true;
     state.controlState = action === 'start' ? 'running' : 'paused';
     state.controlStateLabel = action === 'start' ? '运行中' : '暂停';
-    uni.showToast({ title: action === 'start' ? '已下发开始指令' : '已下发暂停指令', icon: 'success' });
+    uni.showToast({ title: action === 'start' ? '已下发开始指令' : '已下发暂停指令', icon: 'success', duration: 2000 });
     await new Promise(resolve => setTimeout(resolve, 500));
     sendInitCommand();
     state.controlLoading = false;

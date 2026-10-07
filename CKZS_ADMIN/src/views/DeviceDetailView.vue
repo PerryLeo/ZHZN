@@ -21,7 +21,7 @@
             <span class="tag" :class="abnormalStatusTone">{{ deviceState.abnormalStatus }}</span>
             <span class="tag" :class="isBound ? 'success' : 'neutral'">{{ isBound ? '已绑定' : '未绑定' }}</span>
           </div>
-          <p>{{ device.deviceCode }} · 初始名称 {{ device.deviceName || '--' }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}<template v-if="deviceState.version"> · 固件 {{ deviceState.version }}</template></p>
+          <p>{{ device.deviceCode }} · 初始名称 {{ device.reportedDeviceName || '--' }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}<template v-if="deviceState.version"> · 固件 {{ deviceState.version }}</template></p>
         </div>
         <div class="detail-hero-actions">
           <button class="secondary-btn" type="button" :disabled="commandBusy || !canDeviceControl" @click="handleDeviceControl">{{ getDeviceControlLabel }}</button>
@@ -111,7 +111,7 @@
             <div class="side-card-body">
               <input v-model.trim="editableName" class="form-control" maxlength="100" placeholder="请输入备注名称">
               <button class="primary-btn full-button" type="button" :disabled="savingName" @click="saveName">{{ savingName ? '保存中...' : '保存备注' }}</button>
-              <span class="readonly-device-name">设备初始名称：{{ device.deviceName || '--' }}</span>
+              <span class="readonly-device-name">设备初始名称：{{ device.reportedDeviceName || '--' }}</span>
               <span class="readonly-device-name">设备固件版本：{{ deviceState.version || '--' }}</span>
             </div>
           </section>

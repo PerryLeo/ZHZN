@@ -45,7 +45,7 @@
                 <div><strong>{{ item.remarkName || '--' }}</strong><span>{{ item.deviceCode }}</span></div>
               </div>
             </td>
-            <td>{{ item.deviceName || '--' }}</td>
+            <td>{{ item.reportedDeviceName || '--' }}</td>
             <td>{{ item.owner?.username || '--' }}</td>
             <td><span class="tag" :class="getOnlineStatus(item).tone">{{ getOnlineStatus(item).label }}</span></td>
             <td>
@@ -158,6 +158,7 @@ const refreshCurrentPageOnlineStatus = async (devices) => {
   if (!currentDevices.length) return;
   currentDevices.forEach(device => {
     device.signalStrength = null;
+    device.reportedDeviceName = '';
   });
   const requestId = ++onlineStatusRequestId;
   onlineStatusChecking.value = true;
@@ -172,7 +173,10 @@ const refreshCurrentPageOnlineStatus = async (devices) => {
       device.online = status?.success || status?.identityMismatch ? 1 : 0;
       device.identityMismatch = Boolean(status?.identityMismatch);
       device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
-      if (status?.success) Object.assign(device, parseDeviceStatusReport(status));
+      if (status?.success) {
+        device.reportedDeviceName = status.identity?.name || '';
+        Object.assign(device, parseDeviceStatusReport(status));
+      }
       else device.signalStrength = null;
       device.onlineChecking = false;
     });
@@ -233,7 +237,7 @@ const openDetail = (device) => {
 };
 const openDeviceForm = (device = null) => {
   deviceModal.editing = device;
-  Object.assign(deviceForm, device ? { deviceCode: device.deviceCode, deviceName: device.deviceName || '', remarkName: device.remarkName || '', deviceType: device.deviceType || 'dtu' } : { deviceCode: '', deviceName: '', remarkName: '', deviceType: 'dtu' });
+  Object.assign(deviceForm, device ? { deviceCode: device.deviceCode, deviceName: device.reportedDeviceName || '', remarkName: device.remarkName || '', deviceType: device.deviceType || 'dtu' } : { deviceCode: '', deviceName: '', remarkName: '', deviceType: 'dtu' });
   deviceModal.visible = true;
 };
 const formatBattery = (value) => Number.isFinite(Number(value)) ? `${Number(value)}%` : '--';

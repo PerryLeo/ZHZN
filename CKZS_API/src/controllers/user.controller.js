@@ -245,7 +245,6 @@ export const UserController = {
       });
       const list = rows.map((device) => {
         const data = device.toJSON();
-        data.remarkName = data.remarkName || data.deviceName;
         return data;
       });
       return paginate(res, { list, total: count, page, pageSize });

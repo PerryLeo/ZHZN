@@ -115,7 +115,7 @@ const getConnectErrorMessage = (error) => {
 const startScan = () => {
     if (isRequestingBluetoothPermission) return;
     if (!BAdapter.isEnabled()) {
-        uni.showToast({ title: '请先开启蓝牙', icon: 'none' });
+        uni.showToast({ title: '请先开启蓝牙', icon: 'none', duration: 2000 });
         return;
     }
     // Android 12（API 31）及以上的蓝牙扫描不依赖定位服务，避免误拦截。
@@ -141,7 +141,7 @@ const startScan = () => {
         (e) => {
             isRequestingBluetoothPermission = false;
             if (e.deniedPresent.length > 0 || e.deniedAlways.length > 0) {
-                uni.showToast({ title: sdkVersion >= 31 ? '附近设备权限缺失' : '定位权限缺失', icon: 'none' });
+                uni.showToast({ title: sdkVersion >= 31 ? '附近设备权限缺失' : '定位权限缺失', icon: 'none', duration: 2000 });
                 return;
             }
             executeNativeDiscovery();
@@ -149,7 +149,7 @@ const startScan = () => {
         (e) => {
             isRequestingBluetoothPermission = false;
             console.error('[蓝牙权限申请失败]', e);
-            uni.showToast({ title: '蓝牙权限申请失败', icon: 'none' });
+            uni.showToast({ title: '蓝牙权限申请失败', icon: 'none', duration: 2000 });
         }
     );
 };
@@ -243,14 +243,14 @@ const connectDevice = (device) => {
                 saved.push({ name: device.name, initialName: device.name, remarkName: device.name, mac: device.mac, addTime: Date.now() });
                 uni.setStorageSync('SAVED_BLUETOOTH_DEVICES', saved);
             }
-            uni.showToast({ title: '连接成功', icon: 'success' });
+            uni.showToast({ title: '连接成功', icon: 'success', duration: 2000 });
             setTimeout(() => {
                 uni.navigateTo({ url: `/pages/deviceState/index?name=${encodeURIComponent(device.name)}&initialName=${encodeURIComponent(device.name)}&remarkName=${encodeURIComponent(device.name)}&mac=${device.mac}` });
-            }, 1000);
+            }, 2000);
         } catch (e) {
             console.error('[蓝牙连接失败]', e);
             try { socket?.close(); } catch (closeError) { }
-            uni.showToast({ title: getConnectErrorMessage(e), icon: 'none' });
+            uni.showToast({ title: getConnectErrorMessage(e), icon: 'none', duration: 2000 });
         } finally {
             isConnecting = false;
             uni.hideLoading();
