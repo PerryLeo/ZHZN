@@ -251,13 +251,14 @@ const executeTask = async (task, firmwarePath, receiver, otaHandler) => {
       END_TIMEOUT_MS
     );
 
-    // 硬件联调期间先只验证固件传输和校验，暂时不下发重启指令。
-    // await mqttService.publishBinary(task.deviceCode, Buffer.from('$G\n', 'ascii'));
-    // mqttService.watchPostOtaUplinks(task.deviceCode, task.id);
+    task.status = 'rebooting';
+    task.message = '设备正在重启';
+    await mqttService.publishBinary(task.deviceCode, Buffer.from('$G\n', 'ascii'));
+    mqttService.watchPostOtaUplinks(task.deviceCode, task.id);
 
     task.status = 'success';
     task.progress = 100;
-    task.message = '固件传输和校验完成，已按硬件测试要求跳过 $G';
+    task.message = '固件传输完成，设备已进入重启流程';
   } catch (error) {
     task.status = 'failed';
     task.message = error.message || 'OTA升级失败';
