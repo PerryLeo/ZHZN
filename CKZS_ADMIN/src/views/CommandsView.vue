@@ -27,6 +27,10 @@
         </div>
         <div class="command-tip">操作会直接通过现有 MQTT 服务下发到真实设备，并等待该设备回执，请确认设备和指令内容无误。</div>
         <button class="primary-btn command-submit" type="submit" :disabled="sending">{{ sending ? '指令下发中...' : '确认下发指令' }}</button>
+        <div v-if="result" class="command-result-header">
+          <span>指令回执</span>
+          <button class="secondary-btn command-result-copy" type="button" @click="copyResult">复制回执</button>
+        </div>
         <pre v-if="result" class="command-result">{{ result }}</pre>
       </form>
     </section>
@@ -117,6 +121,16 @@ const sendCommand = async () => {
     result.value = `ERROR: ${error.message}`;
     showToast(error.message, 'error');
   } finally { sending.value = false; }
+};
+
+const copyResult = async () => {
+  if (!result.value) return;
+  try {
+    await navigator.clipboard.writeText(result.value);
+    showToast('回执内容已复制');
+  } catch {
+    showToast('复制失败，请重试', 'error');
+  }
 };
 
 onMounted(fetchDevices);

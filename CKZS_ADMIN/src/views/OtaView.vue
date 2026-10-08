@@ -121,7 +121,7 @@
           <table class="data-table ota-table">
             <thead><tr><th>创建时间</th><th>升级范围</th><th>目标固件</th><th>设备进度</th><th>状态</th><th>操作人</th><th>操作</th></tr></thead>
             <tbody>
-              <tr v-if="loadingBatches"><td colspan="7" class="empty-state">批次加载中...</td></tr>
+              <tr v-if="loadingBatches && !batches.length"><td colspan="7" class="empty-state">批次加载中...</td></tr>
               <tr v-else-if="!batches.length"><td colspan="7" class="empty-state">暂无 OTA 批次</td></tr>
               <tr v-for="batch in batches" :key="batch.id">
                 <td>{{ formatTime(batch.createdAt) }}</td>
@@ -184,7 +184,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import { api } from '../services/api.js';
@@ -228,7 +228,9 @@ const uploadCandidate = ref(null);
 const uploadedFirmware = ref(null);
 const uploadConfirmVisible = ref(false);
 const uploadingFirmware = ref(false);
+const manualRefreshKey = inject('manualRefreshKey', null);
 let pollTimer = null;
+let polling = false;
 
 const selectedFirmware = computed(() => firmwares.value.find(item => item.firmwareFile === firmwareFile.value) || null);
 const canPreview = computed(() => {
@@ -376,16 +378,16 @@ const openHistory = async () => {
   await loadBatches(1);
 };
 
-const loadBatches = async (page = batchPage.value) => {
-  loadingBatches.value = true;
+const loadBatches = async (page = batchPage.value, { silent = false } = {}) => {
+  if (!silent) loadingBatches.value = true;
   try {
     const result = await api.get('/api/ota/batches', { page, pageSize: batchPageSize, status: historyStatus.value });
     batches.value = result.list || [];
     batchPage.value = result.page || page;
     batchTotal.value = result.total || 0;
     batchTotalPages.value = result.totalPages || 1;
-  } catch (error) { showToast(error.message, 'error'); }
-  finally { loadingBatches.value = false; }
+  } catch (error) { if (!silent) showToast(error.message, 'error'); }
+  finally { if (!silent) loadingBatches.value = false; }
 };
 
 const selectBatch = async (batchId) => {
@@ -416,14 +418,27 @@ const retryFailed = async () => {
 };
 
 const refreshSelectedBatch = async () => {
-  if (section.value !== 'history' || !selectedBatch.value) return;
+  if (polling || section.value !== 'history' || !selectedBatch.value) return;
+  polling = true;
   const currentId = selectedBatch.value.id;
   try {
     const result = await api.get(`/api/ota/batches/${currentId}`);
     if (selectedBatch.value?.id === currentId) selectedBatch.value = result;
-    await loadBatches(batchPage.value);
+    await loadBatches(batchPage.value, { silent: true });
   } catch { /* keep the last visible state while polling */ }
+  finally { polling = false; }
 };
+
+watch(manualRefreshKey || (() => 0), async () => {
+  if (section.value === 'history') {
+    await Promise.all([
+      loadBatches(batchPage.value, { silent: true }),
+      selectedBatch.value ? selectBatch(selectedBatch.value.id) : Promise.resolve(),
+    ]);
+    return;
+  }
+  await Promise.all([loadFirmwares(), loadUsers()]);
+});
 
 const formatBytes = value => {
   const bytes = Number(value) || 0;

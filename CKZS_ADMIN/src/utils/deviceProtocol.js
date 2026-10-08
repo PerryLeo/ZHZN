@@ -62,7 +62,7 @@ export const parseDeviceStatusReport = (payload) => {
   const batteryAlarm = getStatusMetric(text, ['BatAlarm']);
   const fanAlarm = getStatusMetric(text, ['FanAlarm']);
   const batteryAlarmMap = { 1: '满', 2: '过流', 3: '拔出', 4: '过压', 5: '欠流', 6: '电池电压过低' };
-  const fanAlarmMap = { 1: '风扇1低于阈值', 2: '风扇2低于阈值', 3: '两个风扇均低于阈值', 5: '启动瞬间电流不足' };
+  const fanAlarmMap = { 1: '风扇1低于阈值', 2: '风扇2低于阈值', 3: '两个风扇均低于阈值', 5: '风扇异常' };
   const alarms = [];
   if (batteryAlarm !== null && batteryAlarm !== 0) alarms.push(batteryAlarmMap[batteryAlarm] || `电池告警(${batteryAlarm})`);
   if (fanAlarm !== null && fanAlarm !== 0) alarms.push(fanAlarmMap[fanAlarm] || `风扇告警(${fanAlarm})`);

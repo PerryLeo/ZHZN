@@ -28,14 +28,14 @@
         </div>
       </header>
       <div class="page-content">
-        <RouterView :key="`${route.fullPath}-${refreshKey}`" />
+        <RouterView :key="route.name === 'ota' ? route.fullPath : `${route.fullPath}-${refreshKey}`" />
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, provide, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { clearSession, getUser } from '../services/auth.js';
 import { showToast } from '../utils/toast.js';
@@ -44,6 +44,7 @@ import AppIcon from '../components/AppIcon.vue';
 const route = useRoute();
 const router = useRouter();
 const refreshKey = ref(0);
+provide('manualRefreshKey', refreshKey);
 const user = getUser();
 const avatar = computed(() => user?.username?.slice(0, 1).toUpperCase() || 'A');
 const menu = [

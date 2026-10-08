@@ -263,6 +263,9 @@ textarea.form-control { height: 120px; padding: 12px; resize: vertical; font-fam
 .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .command-tip { padding: 12px 14px; border-radius: 9px; color: #5c6680; background: #f4f6fb; font-size: 12px; line-height: 1.7; }
 .command-result { max-height: 190px; margin-top: 16px; overflow: auto; padding: 14px; border-radius: 9px; color: #dfe6ff; background: #111a31; font: 12px/1.7 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.command-result-header { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.command-result-copy { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12px; }
+.command-result-header + .command-result { margin-top: 10px; }
 
 .modal-mask { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(17,25,46,.48); backdrop-filter: blur(4px); }
 .modal { width: min(520px, 100%); overflow: hidden; border: 1px solid rgba(225,229,238,.9); border-radius: 18px; background: #fff; box-shadow: 0 28px 70px rgba(10,18,42,.22); animation: modal-in .2s ease-out; }
