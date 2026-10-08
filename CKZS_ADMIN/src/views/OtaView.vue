@@ -56,7 +56,7 @@
           </div>
 
           <div v-if="scope === 'user'" class="target-picker">
-            <div class="form-field"><label for="ota-user">目标用户</label><select id="ota-user" v-model="targetUserId" class="form-control" @change="loadUserDevices"><option value="">请选择 APP 用户</option><option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}（{{ user.deviceCount }} 台）</option></select></div>
+            <div class="form-field"><label for="ota-user">目标用户</label><select id="ota-user" v-model="targetUserId" class="form-control" @change="loadUserDevices"><option value="">请选择用户</option><option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}（{{ user.role === 'admin' ? '管理员' : 'APP用户' }} · {{ user.deviceCount }} 台）</option></select></div>
             <div v-if="targetUserId" class="target-list-wrap">
               <div class="target-list-heading"><strong>该用户的绑定设备</strong><span>已选 {{ selectedUserDeviceCodes.length }} / {{ userDevices.length }} 台</span></div>
               <div v-if="loadingUserDevices" class="empty-state">正在读取用户设备...</div>
@@ -193,7 +193,7 @@ import { showToast } from '../utils/toast.js';
 
 const scopes = [
   { key: 'all', title: '全部设备', description: '全部已绑定设备，按在线状态筛选' },
-  { key: 'user', title: '指定用户', description: '选择用户并勾选其绑定设备' },
+  { key: 'user', title: '指定用户', description: '选择任一账号并勾选其绑定设备' },
   { key: 'device', title: '单个设备', description: '搜索设备后单独发起更新' },
 ];
 const section = ref('create');
@@ -302,10 +302,10 @@ const loadFirmwares = async () => {
 
 const loadUsers = async () => {
   try {
-    const first = await api.get('/api/admin/users', { page: 1, pageSize: 100, role: 'user' });
+    const first = await api.get('/api/admin/users', { page: 1, pageSize: 100 });
     users.value = [...first.list];
     for (let page = 2; page <= first.totalPages; page += 1) {
-      const next = await api.get('/api/admin/users', { page, pageSize: 100, role: 'user' });
+      const next = await api.get('/api/admin/users', { page, pageSize: 100 });
       users.value.push(...next.list);
     }
   } catch (error) { showToast(error.message, 'error'); }

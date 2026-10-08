@@ -436,7 +436,7 @@ const getTargets = async ({ scope, targetUserId, deviceCode, deviceCodes }) => {
     const parsedUserId = Number(targetUserId);
     if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) throw new Error('请选择目标用户');
     targetUser = await User.findByPk(parsedUserId, { attributes: ['id', 'username', 'role'] });
-    if (!targetUser || targetUser.role !== 'user') throw new Error('目标用户不存在或不是 APP 用户');
+    if (!targetUser) throw new Error('目标用户不存在');
     where.userId = targetUser.id;
   } else if (scope === 'device') {
     const normalizedCode = String(deviceCode || '').trim();

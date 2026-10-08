@@ -65,7 +65,7 @@ OTA_MAX_RETRY=3
 | POST | `/api/ota/batches/{batchId}/resume` | 恢复批次中等待处理的设备 |
 | POST | `/api/ota/batches/{batchId}/retry-failed` | 将仍在线的失败设备重新排队 |
 
-上传固件使用 `Content-Type: application/octet-stream`，请求体为 `.pkg` 文件原始内容。服务端将它写入临时文件，再原子替换 `OTA_FIRMWARE_DIR/lobster-feeder.pkg`；OTA 任务排队或执行期间拒绝覆盖。预览和创建批次使用相同请求字段。全部设备：`{"scope":"all","firmwareFile":"lobster-feeder.pkg"}`；指定用户：增加 `targetUserId`，可用 `deviceCodes` 限定该用户的部分设备；单设备：使用 `scope: "device"` 和 `deviceCode`。所有设备范围均只包含已绑定设备；创建时离线或已在处理其他任务的设备会被记录为跳过。批次与逐设备任务保存在数据库中，服务重启后已开始的任务会标记失败，未开始的批次保留为暂停状态，可由管理员恢复。
+上传固件使用 `Content-Type: application/octet-stream`，请求体为 `.pkg` 文件原始内容。服务端将它写入临时文件，再原子替换 `OTA_FIRMWARE_DIR/lobster-feeder.pkg`；OTA 任务排队或执行期间拒绝覆盖。预览和创建批次使用相同请求字段。全部设备：`{"scope":"all","firmwareFile":"lobster-feeder.pkg"}`；指定账号：增加 `targetUserId`，可用 `deviceCodes` 限定该账号的部分设备；账号列表包含 APP 用户和管理员；单设备：使用 `scope: "device"` 和 `deviceCode`。所有设备范围均只包含已绑定设备；创建时离线或已在处理其他任务的设备会被记录为跳过。批次与逐设备任务保存在数据库中，服务重启后已开始的任务会标记失败，未开始的批次保留为暂停状态，可由管理员恢复。
 
 ## 查询升级任务
 
