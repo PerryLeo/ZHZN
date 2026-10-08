@@ -31,6 +31,10 @@
       <rect x="3" y="4" width="18" height="16" rx="2.5" />
       <path d="m7 9 3 3-3 3M13 15h4" />
     </template>
+    <template v-else-if="name === 'ota'">
+      <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+      <path d="M5 17v3h14v-3" />
+    </template>
     <template v-else-if="name === 'refresh'">
       <path d="M20 6v5h-5" />
       <path d="M4 18v-5h5" />

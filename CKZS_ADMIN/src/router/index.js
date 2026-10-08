@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'devices', name: 'devices', component: () => import('../views/DevicesView.vue'), meta: { title: '设备管理', eyebrow: 'DEVICE ASSETS' } },
         { path: 'devices/detail/:deviceCode', name: 'device-detail', component: () => import('../views/DeviceDetailView.vue'), meta: { title: '设备详情', eyebrow: 'DEVICE DETAIL' } },
         { path: 'users', name: 'users', component: () => import('../views/UsersView.vue'), meta: { title: '用户管理', eyebrow: 'USER ACCOUNTS' } },
+        { path: 'ota', name: 'ota', component: () => import('../views/OtaView.vue'), meta: { title: 'OTA升级', eyebrow: 'FIRMWARE ROLLOUT' } },
         { path: 'commands', name: 'commands', component: () => import('../views/CommandsView.vue'), meta: { title: '指令控制', eyebrow: 'REMOTE COMMAND' } },
       ],
     },

@@ -232,6 +232,166 @@ paths:
         '403': { $ref: '#/components/responses/JsonResponse' }
         '404': { $ref: '#/components/responses/JsonResponse' }
 
+  /api/ota/firmwares:
+    get:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: listOtaFirmwares
+      summary: 管理端列出可用固件
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/firmwares/lobster-feeder.pkg:
+    put:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: uploadOtaFirmware
+      summary: 上传并覆盖 lobster-feeder.pkg
+      description: 管理员上传原始二进制固件。OTA 任务待执行或执行期间不允许覆盖。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '400': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+        '409': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/preview:
+    post:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: previewOtaBatch
+      summary: 预览管理端升级范围
+      description: scope 支持 all、user、device；仅管理员可用。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, firmwareFile]
+              properties:
+                scope: { type: string, enum: [all, user, device] }
+                firmwareFile: { type: string }
+                targetUserId: { type: integer }
+                deviceCodes: { type: array, items: { type: string } }
+                deviceCode: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '400': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/batches:
+    get:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: listOtaBatches
+      summary: 分页查询 OTA 批次
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+    post:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: createOtaBatch
+      summary: 创建管理端 OTA 批次
+      description: 仅管理员可用，在线设备进入全局串行队列。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, firmwareFile]
+              properties:
+                scope: { type: string, enum: [all, user, device] }
+                firmwareFile: { type: string }
+                targetUserId: { type: integer }
+                deviceCodes: { type: array, items: { type: string } }
+                deviceCode: { type: string }
+      responses:
+        '202': { $ref: '#/components/responses/JsonResponse' }
+        '400': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/batches/{batchId}:
+    get:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: getOtaBatch
+      summary: 查询 OTA 批次和逐设备任务
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+        '404': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/batches/{batchId}/pause:
+    post:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: pauseOtaBatch
+      summary: 当前任务结束后暂停批次队列
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+        '404': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/batches/{batchId}/resume:
+    post:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: resumeOtaBatch
+      summary: 恢复暂停的 OTA 批次
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+        '404': { $ref: '#/components/responses/JsonResponse' }
+  /api/ota/batches/{batchId}/retry-failed:
+    post:
+      tags: [OTA升级]
+      x-apifox-folder: OTA升级
+      operationId: retryFailedOtaTasks
+      summary: 重试批次中的失败设备
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+        '403': { $ref: '#/components/responses/JsonResponse' }
+        '404': { $ref: '#/components/responses/JsonResponse' }
+
   /api/admin/dashboard:
     get:
       tags: [管理端]

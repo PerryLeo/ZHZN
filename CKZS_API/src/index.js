@@ -2,6 +2,7 @@ import app from './app.js';
 import config from './config/index.js';
 import { connectDB } from './config/database.js';
 import { syncDB } from './models/index.js';
+import otaService from './services/ota.service.js';
 
 const { port, nodeEnv } = config;
 
@@ -11,6 +12,7 @@ const start = async () => {
 
   // 同步表结构 (开发环境)
   await syncDB();
+  await otaService.recoverAfterRestart();
 
 
   // 初始化 MQTT 服务（4G 模块通信）

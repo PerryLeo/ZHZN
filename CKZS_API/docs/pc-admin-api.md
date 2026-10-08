@@ -27,7 +27,18 @@ Authorization: Bearer <token>
 | POST | `/api/users/resetPassword` | 管理员重置用户密码 |
 | POST | `/api/devices/command` | 单设备指令及回执 |
 | POST | `/api/devices/batchCommand` | 多设备异步批量指令 |
+| GET | `/api/ota/firmwares` | 列出管理端可用固件 |
+| PUT | `/api/ota/firmwares/lobster-feeder.pkg` | 上传新 .pkg 并覆盖服务器固件 |
+| POST | `/api/ota/preview` | 预览全部、指定用户或单设备 OTA 范围 |
+| POST | `/api/ota/batches` | 创建串行 OTA 批次 |
+| GET | `/api/ota/batches` | 分页查看 OTA 批次 |
+| GET | `/api/ota/batches/:batchId` | 查看批次与逐设备任务结果 |
+| POST | `/api/ota/batches/:batchId/pause` | 暂停批次后续设备任务 |
+| POST | `/api/ota/batches/:batchId/resume` | 恢复暂停的批次 |
+| POST | `/api/ota/batches/:batchId/retry-failed` | 重试仍在线的失败设备 |
 
 设备分配、解绑会直接修改 APP 所读取的 `devices.userId`、`status` 和 `bindAt` 字段，因此两端数据一致，不需要复制或同步两份设备数据。
 
 删除设备前必须先解绑。删除成功后，设备记录及其设备分组关联将被永久移除。
+
+OTA 固件需预先放入服务端 `OTA_FIRMWARE_DIR`（默认 `/opt/ota/firmware`）。批次记录及设备级进度保存在 MySQL；设备按串行队列升级。服务重启后已开始的设备任务标记失败，未开始的批次暂停，可在 OTA 页面恢复。

@@ -49,6 +49,7 @@ const avatar = computed(() => user?.username?.slice(0, 1).toUpperCase() || 'A');
 const menu = [
   { name: 'devices', label: '设备管理', icon: 'device' },
   { name: 'users', label: '用户管理', icon: 'users' },
+  { name: 'ota', label: 'OTA升级', icon: 'ota' },
   { name: 'commands', label: '指令控制', icon: 'command' },
 ];
 
