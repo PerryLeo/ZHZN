@@ -490,22 +490,15 @@ const otaService = {
     firmwareUploadInProgress = true;
     try {
       if (taskCreationCount > 0) {
-        const error = new Error('正在创建 OTA 任务，请稍后再覆盖固件');
+        const error = new Error('正在创建 OTA 任务，请稍后再保存新固件');
         error.statusCode = 409;
         throw error;
       }
-      const inFlightStatuses = ['pending', 'starting', 'transferring', 'verifying', 'rebooting'];
-      if (await OtaTask.count({ where: { status: { [Op.in]: inFlightStatuses } } })) {
-        const error = new Error('存在待执行或执行中的 OTA 任务，请等待任务结束后再覆盖固件');
-        error.statusCode = 409;
-        throw error;
-      }
-
-      const firmwareFile = 'lobster-feeder.pkg';
-      const metadata = readFirmwareMetadata(firmwareBuffer, firmwareFile);
+      const preliminaryMetadata = readFirmwareMetadata(firmwareBuffer, '');
+      const versionSegment = preliminaryMetadata.firmwareVersion || 'unknown';
+      const nameStem = `lobster-feeder-${versionSegment}-${preliminaryMetadata.firmwareSha256.slice(0, 12)}`;
       await fs.mkdir(FIRMWARE_DIR, { recursive: true });
-      const targetPath = path.join(FIRMWARE_DIR, firmwareFile);
-      const temporaryPath = path.join(FIRMWARE_DIR, `.${firmwareFile}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
+      const temporaryPath = path.join(FIRMWARE_DIR, `.upload-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`);
       let fileHandle;
       try {
         fileHandle = await fs.open(temporaryPath, 'wx', 0o644);
@@ -513,13 +506,32 @@ const otaService = {
         await fileHandle.sync();
         await fileHandle.close();
         fileHandle = null;
-        await fs.rename(temporaryPath, targetPath);
+
+        let firmwareFile = '';
+        for (let duplicate = 1; ; duplicate += 1) {
+          const suffix = duplicate === 1 ? '' : `-${duplicate}`;
+          const candidate = `${nameStem}${suffix}.pkg`;
+          try {
+            await fs.link(temporaryPath, path.join(FIRMWARE_DIR, candidate));
+            firmwareFile = candidate;
+            break;
+          } catch (error) {
+            if (error.code !== 'EEXIST') throw error;
+            const existingBuffer = await fs.readFile(path.join(FIRMWARE_DIR, candidate));
+            const existingHash = crypto.createHash('sha256').update(existingBuffer).digest('hex');
+            if (existingHash === preliminaryMetadata.firmwareSha256) {
+              firmwareFile = candidate;
+              break;
+            }
+          }
+        }
+        await fs.rm(temporaryPath, { force: true });
+        return { ...preliminaryMetadata, firmwareFile };
       } catch (error) {
         if (fileHandle) await fileHandle.close().catch(() => {});
         await fs.rm(temporaryPath, { force: true }).catch(() => {});
         throw error;
       }
-      return metadata;
     } finally {
       firmwareUploadInProgress = false;
     }

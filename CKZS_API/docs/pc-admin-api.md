@@ -28,7 +28,7 @@ Authorization: Bearer <token>
 | POST | `/api/devices/command` | 单设备指令及回执 |
 | POST | `/api/devices/batchCommand` | 多设备异步批量指令 |
 | GET | `/api/ota/firmwares` | 列出管理端可用固件 |
-| PUT | `/api/ota/firmwares/lobster-feeder.pkg` | 上传新 .pkg 并覆盖服务器固件 |
+| POST | `/api/ota/firmwares` | 上传新的 .pkg 固件版本并保留旧版本 |
 | POST | `/api/ota/preview` | 预览全部、指定用户或单设备 OTA 范围 |
 | POST | `/api/ota/batches` | 创建串行 OTA 批次 |
 | GET | `/api/ota/batches` | 分页查看 OTA 批次 |

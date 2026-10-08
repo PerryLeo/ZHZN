@@ -8,7 +8,7 @@ const router = Router();
 
 router.use(auth);
 router.get('/firmwares', requireAdmin, OtaController.firmwares);
-router.put('/firmwares/lobster-feeder.pkg', requireAdmin, express.raw({ type: 'application/octet-stream', limit: '10mb' }), OtaController.uploadFirmware);
+router.post('/firmwares', requireAdmin, express.raw({ type: 'application/octet-stream', limit: '10mb' }), OtaController.uploadFirmware);
 router.post('/preview', requireAdmin, OtaController.preview);
 router.post('/batches', requireAdmin, OtaController.createBatch);
 router.get('/batches', requireAdmin, OtaController.batches);

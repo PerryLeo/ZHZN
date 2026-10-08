@@ -242,13 +242,12 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/JsonResponse' }
         '403': { $ref: '#/components/responses/JsonResponse' }
-  /api/ota/firmwares/lobster-feeder.pkg:
-    put:
+    post:
       tags: [OTA升级]
       x-apifox-folder: OTA升级
       operationId: uploadOtaFirmware
-      summary: 上传并覆盖 lobster-feeder.pkg
-      description: 管理员上传原始二进制固件。OTA 任务待执行或执行期间不允许覆盖。
+      summary: 上传一个新的 OTA 固件版本
+      description: 管理员上传原始二进制固件，服务器生成版本化文件名并保留已有固件。
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true

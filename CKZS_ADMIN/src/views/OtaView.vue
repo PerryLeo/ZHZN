@@ -7,7 +7,7 @@
 
     <template v-if="section === 'create'">
       <section class="panel ota-panel">
-        <div class="panel-header"><div><h2>上传新固件</h2><p>选择新的 .pkg 文件，确认后覆盖服务器上的 lobster-feeder.pkg</p></div><span class="role-tag">最大 10 MB</span></div>
+        <div class="panel-header"><div><h2>上传新固件</h2><p>每次上传都会保留为一个新版本，旧固件仍可在下方选择</p></div><span class="role-tag">最大 10 MB</span></div>
         <div class="ota-panel-body">
           <div class="upload-control">
             <input ref="firmwareInput" type="file" accept=".pkg,application/octet-stream" :disabled="uploadingFirmware" @change="inspectFirmwareFile">
@@ -19,9 +19,9 @@
             <div><span>文件大小</span><strong>{{ formatBytes(uploadCandidate.size) }}</strong></div>
           </div>
           <div class="ota-actions upload-actions">
-            <button class="primary-btn" type="button" :disabled="!uploadCandidate || uploadingFirmware" @click="uploadConfirmVisible = true">确认并覆盖服务器固件</button>
+            <button class="primary-btn" type="button" :disabled="!uploadCandidate || uploadingFirmware" @click="uploadConfirmVisible = true">确认并保存新版本</button>
           </div>
-          <div v-if="uploadedFirmware" class="upload-success">已更新服务器固件：{{ uploadedFirmware.firmwareFile }} · {{ uploadedFirmware.firmwareVersion || '版本未识别' }} · {{ formatBytes(uploadedFirmware.firmwareSize) }}</div>
+          <div v-if="uploadedFirmware" class="upload-success">新版本已保存并加入固件列表：{{ uploadedFirmware.firmwareFile }} · {{ uploadedFirmware.firmwareVersion || '版本未识别' }} · {{ formatBytes(uploadedFirmware.firmwareSize) }}</div>
         </div>
       </section>
 
@@ -82,7 +82,7 @@
             </div>
           </div>
 
-          <div v-if="scope === 'all'" class="ota-inline-notice">将覆盖全部已绑定设备。开始前会逐台重新校验在线状态，离线设备不会下发。</div>
+          <div v-if="scope === 'all'" class="ota-inline-notice">将对全部已绑定设备发起更新。开始前会逐台重新校验在线状态，离线设备不会下发。</div>
           <div class="ota-actions"><button class="primary-btn" type="button" :disabled="previewing || !firmwareFile || !canPreview" @click="previewTargets">{{ previewing ? '正在预览...' : '预览升级范围' }}</button></div>
         </div>
       </section>
@@ -175,10 +175,10 @@
       <p class="confirm-copy">将使用固件 <strong>{{ selectedFirmware?.firmwareVersion || firmwareFile }}</strong>，对预览中的 <strong>{{ preview?.eligibleCount || 0 }} 台在线设备</strong>逐台执行 OTA。离线设备会记录为跳过。</p>
       <p class="confirm-copy ota-confirm-warning">每台设备完成或失败后才会处理下一台；升级期间设备可能短暂离线。</p>
     </AppModal>
-    <AppModal v-model="uploadConfirmVisible" title="确认覆盖固件" confirm-text="上传并覆盖" :loading="uploadingFirmware" @confirm="uploadFirmware">
-      <p class="confirm-copy">将把本地文件 <strong>{{ uploadCandidate?.name }}</strong> 上传到服务器固件目录，并覆盖其中的 <strong>lobster-feeder.pkg</strong>。</p>
+    <AppModal v-model="uploadConfirmVisible" title="确认上传新版本" confirm-text="上传并保存" :loading="uploadingFirmware" @confirm="uploadFirmware">
+      <p class="confirm-copy">将把本地文件 <strong>{{ uploadCandidate?.name }}</strong> 保存到服务器固件目录，并生成一个新的版本文件；现有固件不会被覆盖或删除。</p>
       <p class="confirm-copy">识别版本：<strong>{{ uploadCandidate?.version || '未识别版本' }}</strong>；文件大小：<strong>{{ formatBytes(uploadCandidate?.size) }}</strong>。</p>
-      <p class="confirm-copy ota-confirm-warning">上传不会自动开始设备升级；OTA 队列有待执行或执行中任务时，服务器会拒绝覆盖。</p>
+      <p class="confirm-copy ota-confirm-warning">上传不会自动开始设备升级；上传完成后可在固件下拉框选择新旧任一版本。若设备 Bootloader 禁止降级，设备可能会拒绝旧版本。</p>
     </AppModal>
   </div>
 </template>
@@ -273,7 +273,7 @@ const uploadFirmware = async () => {
   if (!uploadCandidate.value) return;
   uploadingFirmware.value = true;
   try {
-    const result = await api.uploadBinary('/api/ota/firmwares/lobster-feeder.pkg', uploadCandidate.value.file);
+    const result = await api.uploadBinary('/api/ota/firmwares', uploadCandidate.value.file);
     uploadedFirmware.value = result;
     firmwareFile.value = result.firmwareFile;
     clearPreview();
@@ -281,7 +281,7 @@ const uploadFirmware = async () => {
     uploadConfirmVisible.value = false;
     uploadCandidate.value = null;
     if (firmwareInput.value) firmwareInput.value.value = '';
-    showToast(`固件已覆盖：${result.firmwareVersion || result.firmwareFile}`);
+    showToast(`新固件版本已保存：${result.firmwareVersion || result.firmwareFile}`);
   } catch (error) { showToast(error.message, 'error'); }
   finally { uploadingFirmware.value = false; }
 };

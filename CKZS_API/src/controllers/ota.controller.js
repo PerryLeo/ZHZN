@@ -16,7 +16,7 @@ export const OtaController = {
   async uploadFirmware(req, res) {
     try {
       const metadata = await otaService.uploadFirmware(req.body);
-      return success(res, metadata, '固件上传并覆盖成功');
+      return success(res, metadata, '新固件版本已保存');
     } catch (error) {
       return fail(res, error.message || '固件上传失败', error.statusCode || 400);
     }

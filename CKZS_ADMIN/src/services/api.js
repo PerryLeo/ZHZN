@@ -35,7 +35,7 @@ const request = async (path, options = {}) => {
 export const api = {
   get: (path, params) => request(`${path}${toQuery(params)}`),
   post: (path, data) => request(path, { method: 'POST', body: JSON.stringify(data ?? {}) }),
-  uploadBinary: (path, file) => request(path, { method: 'PUT', body: file, headers: { 'Content-Type': 'application/octet-stream' } }),
+  uploadBinary: (path, file) => request(path, { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' } }),
   put: (path, data) => request(path, { method: 'PUT', body: JSON.stringify(data ?? {}) }),
   delete: (path) => request(path, { method: 'DELETE' }),
 };

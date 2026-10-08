@@ -56,7 +56,7 @@ OTA_MAX_RETRY=3
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/api/ota/firmwares` | 列出服务器固件及版本、大小、SHA-256 |
-| PUT | `/api/ota/firmwares/lobster-feeder.pkg` | 上传并覆盖服务器上的 lobster-feeder.pkg（原始二进制请求体，最大 10 MB） |
+| POST | `/api/ota/firmwares` | 上传一个新版本（原始二进制请求体，最大 10 MB；旧版本保留） |
 | POST | `/api/ota/preview` | 预览全部设备、指定用户设备或单个设备范围 |
 | POST | `/api/ota/batches` | 创建并开始一个串行升级批次 |
 | GET | `/api/ota/batches` | 分页查看批次，可按状态筛选 |
@@ -65,7 +65,7 @@ OTA_MAX_RETRY=3
 | POST | `/api/ota/batches/{batchId}/resume` | 恢复批次中等待处理的设备 |
 | POST | `/api/ota/batches/{batchId}/retry-failed` | 将仍在线的失败设备重新排队 |
 
-上传固件使用 `Content-Type: application/octet-stream`，请求体为 `.pkg` 文件原始内容。服务端将它写入临时文件，再原子替换 `OTA_FIRMWARE_DIR/lobster-feeder.pkg`；OTA 任务排队或执行期间拒绝覆盖。预览和创建批次使用相同请求字段。全部设备：`{"scope":"all","firmwareFile":"lobster-feeder.pkg"}`；指定账号：增加 `targetUserId`，可用 `deviceCodes` 限定该账号的部分设备；账号列表包含 APP 用户和管理员；单设备：使用 `scope: "device"` 和 `deviceCode`。所有设备范围均只包含已绑定设备；创建时离线或已在处理其他任务的设备会被记录为跳过。批次与逐设备任务保存在数据库中，服务重启后已开始的任务会标记失败，未开始的批次保留为暂停状态，可由管理员恢复。
+上传固件使用 `Content-Type: application/octet-stream`，请求体为 `.pkg` 文件原始内容。服务端按固件版本和 SHA-256 生成新的固件文件名，以临时文件写入后原子创建；相同内容不会重复保存，旧版本不会被覆盖或删除。上传后固件列表会包含服务器目录中的所有 `.pkg`，管理员可在下拉框选择旧版本发起升级。预览和创建批次使用相同请求字段，`firmwareFile` 填固件列表接口返回的文件名。全部设备：`{"scope":"all","firmwareFile":"lobster-feeder-20261007-V2-a01d6c38a939.pkg"}`；指定账号：增加 `targetUserId`，可用 `deviceCodes` 限定该账号的部分设备；账号列表包含 APP 用户和管理员；单设备：使用 `scope: "device"` 和 `deviceCode`。所有设备范围均只包含已绑定设备；创建时离线或已在处理其他任务的设备会被记录为跳过。批次与逐设备任务保存在数据库中，服务重启后已开始的任务会标记失败，未开始的批次保留为暂停状态，可由管理员恢复。
 
 ## 查询升级任务
 
