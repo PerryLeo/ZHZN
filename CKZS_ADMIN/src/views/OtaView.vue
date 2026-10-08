@@ -26,7 +26,7 @@
       </section>
 
       <section class="panel ota-panel">
-        <div class="panel-header"><div><h2>选择固件</h2><p>固件由服务器维护，选择已放入 OTA 固件目录的文件</p></div><span class="role-tag">支持 .bin / .pkg</span></div>
+        <div class="panel-header"><div><h2>选择固件</h2><p>固件由服务器维护，选择已放入 OTA 固件目录的文件</p></div><span class="role-tag">仅支持 .pkg</span></div>
         <div class="ota-panel-body">
           <div class="form-field">
             <label for="ota-firmware">固件文件</label>
@@ -42,7 +42,7 @@
             <div><span>文件大小</span><strong>{{ formatBytes(selectedFirmware.firmwareSize) }}</strong></div>
             <div><span>SHA-256</span><strong class="hash-value">{{ selectedFirmware.firmwareSha256 }}</strong></div>
           </div>
-          <div v-if="!firmwares.length && !loadingFirmwares" class="ota-inline-notice">服务器固件目录中没有可用的 .bin 或 .pkg 文件。</div>
+          <div v-if="!firmwares.length && !loadingFirmwares" class="ota-inline-notice">服务器固件目录中没有可用的 .pkg 文件。</div>
         </div>
       </section>
 

@@ -113,8 +113,8 @@ const publicBatch = (batch) => ({
 const resolveFirmware = async (firmwareFile) => {
   const normalizedName = String(firmwareFile || '').trim();
   const lowerCaseName = normalizedName.toLowerCase();
-  if (!normalizedName || path.basename(normalizedName) !== normalizedName || (!lowerCaseName.endsWith('.bin') && !lowerCaseName.endsWith('.pkg'))) {
-    throw new Error('firmwareFile 必须是固件目录中的 .bin 或 .pkg 文件名');
+  if (!normalizedName || path.basename(normalizedName) !== normalizedName || !lowerCaseName.endsWith('.pkg')) {
+    throw new Error('firmwareFile 必须是固件目录中的 .pkg 文件名');
   }
 
   const firmwarePath = path.resolve(FIRMWARE_DIR, normalizedName);
@@ -134,7 +134,7 @@ const resolveFirmware = async (firmwareFile) => {
 
 const listFirmwares = async () => {
   const entries = await fs.readdir(FIRMWARE_DIR, { withFileTypes: true });
-  const files = entries.filter(entry => entry.isFile() && /\.(bin|pkg)$/i.test(entry.name));
+  const files = entries.filter(entry => entry.isFile() && /\.pkg$/i.test(entry.name));
   const result = await Promise.all(files.map(async (entry) => {
     const info = await resolveFirmware(entry.name);
     const stat = await fs.stat(info.firmwarePath);

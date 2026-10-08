@@ -746,7 +746,7 @@ components:
               firmwareFile:
                 type: string
                 minLength: 5
-                pattern: '^[^/\\]+\.(bin|pkg)$'
+                pattern: '^[^/\\]+\.pkg$'
                 description: OTA_FIRMWARE_DIR 目录内的固件文件名，不能包含路径
                 example: lobster-feeder.pkg
     JsonObject:
