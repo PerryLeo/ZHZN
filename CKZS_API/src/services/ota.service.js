@@ -24,11 +24,17 @@ const queuedTaskIds = new Set();
 const activeTasks = new Map();
 let queueRunning = false;
 let firmwareUploadInProgress = false;
+let firmwareDeletionInProgress = false;
 let taskCreationCount = 0;
 
 const acquireTaskCreation = () => {
+  if (firmwareDeletionInProgress) {
+    const error = new Error('固件正在删除，请稍后再创建或恢复 OTA 任务');
+    error.statusCode = 409;
+    throw error;
+  }
   if (firmwareUploadInProgress) {
-    const error = new Error('固件正在上传覆盖，请稍后再创建 OTA 任务');
+    const error = new Error('固件正在上传，请稍后再创建或恢复 OTA 任务');
     error.statusCode = 409;
     throw error;
   }
@@ -476,14 +482,41 @@ const shapeTarget = device => ({
 });
 
 const otaService = {
+  async downloadBluetoothFirmware(firmwareFile) {
+    const normalizedName = String(firmwareFile || '').trim();
+    if (!normalizedName || path.basename(normalizedName) !== normalizedName || !/\.pkg$/i.test(normalizedName)) {
+      const error = new Error('firmwareFile 必须是固件目录中的 .pkg 文件名');
+      error.statusCode = 400;
+      throw error;
+    }
+    // 校验真实路径，防止符号链接指向固件目录之外。
+    const [directoryPath, firmwarePath] = await Promise.all([
+      fs.realpath(FIRMWARE_DIR),
+      fs.realpath(path.join(FIRMWARE_DIR, normalizedName)),
+    ]);
+    if (!firmwarePath.startsWith(directoryPath + path.sep)) {
+      const error = new Error('固件路径不合法');
+      error.statusCode = 400;
+      throw error;
+    }
+    const stat = await fs.stat(firmwarePath);
+    if (!stat.isFile() || stat.size <= 0) {
+      const error = new Error('固件文件不存在或为空');
+      error.statusCode = 404;
+      throw error;
+    }
+    const firmware = await fs.readFile(firmwarePath);
+    return { firmware, ...readFirmwareMetadata(firmware, normalizedName) };
+  },
+
   async listFirmwareFiles() {
     return listFirmwares();
   },
 
   async uploadFirmware(firmwareBuffer) {
     if (!Buffer.isBuffer(firmwareBuffer) || firmwareBuffer.length === 0) throw new Error('请选择非空固件文件');
-    if (firmwareUploadInProgress) {
-      const error = new Error('已有固件上传正在处理，请稍后重试');
+    if (firmwareUploadInProgress || firmwareDeletionInProgress) {
+      const error = new Error('已有固件上传或删除正在处理，请稍后重试');
       error.statusCode = 409;
       throw error;
     }
@@ -534,6 +567,47 @@ const otaService = {
       }
     } finally {
       firmwareUploadInProgress = false;
+    }
+  },
+
+  async deleteFirmware(firmwareFile) {
+    const normalizedName = String(firmwareFile || '');
+    if (!normalizedName || /[\\/\x00]/.test(normalizedName) || path.basename(normalizedName) !== normalizedName || !/\.pkg$/i.test(normalizedName)) {
+      const error = new Error('firmwareFile 必须是固件目录中的 .pkg 文件名');
+      error.statusCode = 400;
+      throw error;
+    }
+    // 与上传、创建、恢复和重试任务互斥，避免检查后又有任务引用该文件。
+    if (firmwareUploadInProgress || firmwareDeletionInProgress || taskCreationCount > 0) {
+      const error = new Error('固件或 OTA 任务正在处理，请稍后再删除');
+      error.statusCode = 409;
+      throw error;
+    }
+    firmwareDeletionInProgress = true;
+    try {
+      const firmwarePath = path.join(FIRMWARE_DIR, normalizedName);
+      const stat = await fs.lstat(firmwarePath);
+      if (!stat.isFile()) {
+        const error = new Error('只能删除固件目录中的普通 .pkg 文件');
+        error.statusCode = 400;
+        throw error;
+      }
+      const task = await OtaTask.findOne({
+        where: {
+          firmwareFile: normalizedName,
+          status: { [Op.in]: ['pending', 'starting', 'transferring', 'verifying', 'rebooting'] },
+        },
+        attributes: ['id'],
+      });
+      if (task) {
+        const error = new Error('该固件存在等待中或正在升级的 OTA 任务，请在任务结束后删除（暂停队列也会占用固件）');
+        error.statusCode = 409;
+        throw error;
+      }
+      await fs.unlink(firmwarePath);
+      return { firmwareFile: normalizedName };
+    } finally {
+      firmwareDeletionInProgress = false;
     }
   },
 
@@ -677,27 +751,32 @@ const otaService = {
   },
 
   async resumeBatch(batchId) {
-    const batch = await OtaBatch.findByPk(batchId);
-    if (!batch) throw new Error('OTA批次不存在');
-    if (batch.status !== 'paused') throw new Error('当前批次未暂停');
-    if (!mqttService.isConnected()) throw new Error('MQTT 未连接');
-    const firmware = await resolveFirmware(batch.firmwareFile);
-    await batch.update({ isPaused: false });
-    pausedBatchIds.delete(batchId);
-    const pendingTasks = await OtaTask.findAll({ where: { batchId, status: 'pending' }, order: [['createdAt', 'ASC']] });
-    for (const record of pendingTasks) {
-      const task = record.get({ plain: true });
-      if (queuedTaskIds.has(task.id)) continue;
-      if (activeTasks.has(task.deviceCode) || mqttService.isOtaBusy(task.deviceCode) || mqttService.hasPendingRawCommand(task.deviceCode)) {
-        await persistTask(task, { status: 'skipped', message: '设备正在处理其他任务，已跳过' });
-        continue;
+    const releaseTaskCreation = acquireTaskCreation();
+    try {
+      const batch = await OtaBatch.findByPk(batchId);
+      if (!batch) throw new Error('OTA批次不存在');
+      if (batch.status !== 'paused') throw new Error('当前批次未暂停');
+      if (!mqttService.isConnected()) throw new Error('MQTT 未连接');
+      const firmware = await resolveFirmware(batch.firmwareFile);
+      await batch.update({ isPaused: false });
+      pausedBatchIds.delete(batchId);
+      const pendingTasks = await OtaTask.findAll({ where: { batchId, status: 'pending' }, order: [['createdAt', 'ASC']] });
+      for (const record of pendingTasks) {
+        const task = record.get({ plain: true });
+        if (queuedTaskIds.has(task.id)) continue;
+        if (activeTasks.has(task.deviceCode) || mqttService.isOtaBusy(task.deviceCode) || mqttService.hasPendingRawCommand(task.deviceCode)) {
+          await persistTask(task, { status: 'skipped', message: '设备正在处理其他任务，已跳过' });
+          continue;
+        }
+        activeTasks.set(task.deviceCode, task.id);
+        enqueueTask(task, firmware.firmwarePath);
       }
-      activeTasks.set(task.deviceCode, task.id);
-      enqueueTask(task, firmware.firmwarePath);
+      await summarizeBatch(batchId);
+      pumpQueue();
+      return this.getBatch(batchId);
+    } finally {
+      releaseTaskCreation();
     }
-    await summarizeBatch(batchId);
-    pumpQueue();
-    return this.getBatch(batchId);
   },
 
   async retryFailed(batchId) {

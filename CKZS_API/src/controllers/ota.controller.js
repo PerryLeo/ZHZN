@@ -5,6 +5,33 @@ import otaService from '../services/ota.service.js';
 const getOperator = userId => User.findByPk(userId, { attributes: ['id', 'role'] });
 
 export const OtaController = {
+  async bluetoothFirmwares(req, res) {
+    try {
+      const files = await otaService.listFirmwareFiles();
+      return success(res, files.map(file => ({
+        ...file,
+        downloadUrl: `/api/ota/bluetooth/firmwares/${encodeURIComponent(file.firmwareFile)}/download`,
+      })));
+    } catch (error) {
+      if (error.code === 'ENOENT') return success(res, []);
+      return fail(res, '固件列表获取失败', 500);
+    }
+  },
+
+  async downloadBluetoothFirmware(req, res) {
+    try {
+      const file = await otaService.downloadBluetoothFirmware(req.params.firmwareFile);
+      res.attachment(file.firmwareFile);
+      res.set('Content-Type', 'application/octet-stream');
+      res.set('Cache-Control', 'no-cache');
+      res.set('X-Firmware-SHA256', file.firmwareSha256);
+      return res.send(file.firmware);
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return fail(res, '固件文件不存在', 404);
+      return fail(res, error.statusCode ? error.message : '固件下载失败', error.statusCode || 500);
+    }
+  },
+
   async firmwares(req, res) {
     try {
       return success(res, await otaService.listFirmwareFiles());
@@ -19,6 +46,16 @@ export const OtaController = {
       return success(res, metadata, '新固件版本已保存');
     } catch (error) {
       return fail(res, error.message || '固件上传失败', error.statusCode || 400);
+    }
+  },
+
+  async deleteFirmware(req, res) {
+    try {
+      const result = await otaService.deleteFirmware(req.params.firmwareFile);
+      return success(res, result, '固件已删除');
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return fail(res, '固件文件不存在', 404);
+      return fail(res, error.statusCode ? error.message : '固件删除失败', error.statusCode || 500);
     }
   },
 
@@ -39,7 +76,7 @@ export const OtaController = {
       });
       return success(res, batch, 'OTA批次已创建', 202);
     } catch (error) {
-      const statusCode = /正在升级|正在处理上一条指令|设备正在处理/.test(error.message) ? 409 : 400;
+      const statusCode = error.statusCode || (/正在升级|正在处理上一条指令|设备正在处理/.test(error.message) ? 409 : 400);
       return fail(res, error.message || '创建OTA批次失败', statusCode);
     }
   },
@@ -74,7 +111,7 @@ export const OtaController = {
     try {
       return success(res, await otaService.resumeBatch(req.params.batchId), '已恢复OTA队列');
     } catch (error) {
-      return fail(res, error.message || '恢复OTA批次失败', 400);
+      return fail(res, error.message || '恢复OTA批次失败', error.statusCode || 400);
     }
   },
 
@@ -82,7 +119,7 @@ export const OtaController = {
     try {
       return success(res, await otaService.retryFailed(req.params.batchId), '已重新排入失败设备');
     } catch (error) {
-      return fail(res, error.message || '重试OTA任务失败', 400);
+      return fail(res, error.message || '重试OTA任务失败', error.statusCode || 400);
     }
   },
 
@@ -112,7 +149,7 @@ export const OtaController = {
       });
       return success(res, task, '升级任务已创建', 202);
     } catch (error) {
-      const statusCode = /正在升级|正在处理上一条指令/.test(error.message) ? 409 : 400;
+      const statusCode = error.statusCode || (/正在升级|正在处理上一条指令/.test(error.message) ? 409 : 400);
       return fail(res, error.message || '创建升级任务失败', statusCode);
     }
   },

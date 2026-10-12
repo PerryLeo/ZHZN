@@ -19,7 +19,7 @@
             <div><span>文件大小</span><strong>{{ formatBytes(uploadCandidate.size) }}</strong></div>
           </div>
           <div class="ota-actions upload-actions">
-            <button class="primary-btn" type="button" :disabled="!uploadCandidate || uploadingFirmware" @click="uploadConfirmVisible = true">确认并保存新版本</button>
+            <button class="primary-btn" type="button" :disabled="!uploadCandidate || uploadingFirmware || deletingFirmware" @click="uploadConfirmVisible = true">确认并保存新版本</button>
           </div>
           <div v-if="uploadedFirmware" class="upload-success">新版本已保存并加入固件列表：{{ uploadedFirmware.firmwareFile }} · {{ uploadedFirmware.firmwareVersion || '版本未识别' }} · {{ formatBytes(uploadedFirmware.firmwareSize) }}</div>
         </div>
@@ -30,12 +30,15 @@
         <div class="ota-panel-body">
           <div class="form-field">
             <label for="ota-firmware">固件文件</label>
-            <select id="ota-firmware" v-model="firmwareFile" class="form-control" @change="clearPreview">
-              <option value="">请选择固件</option>
-              <option v-for="firmware in firmwares" :key="firmware.firmwareFile" :value="firmware.firmwareFile">
-                {{ firmware.firmwareVersion || '未识别版本' }} · {{ firmware.firmwareFile }}
-              </option>
-            </select>
+            <div class="firmware-select-control">
+              <select id="ota-firmware" v-model="firmwareFile" class="form-control" :disabled="loadingFirmwares || deletingFirmware" @change="clearPreview">
+                <option value="">请选择固件</option>
+                <option v-for="firmware in firmwares" :key="firmware.firmwareFile" :value="firmware.firmwareFile">
+                  {{ firmware.firmwareVersion || '未识别版本' }} · {{ firmware.firmwareFile }}
+                </option>
+              </select>
+              <button class="danger-btn" type="button" :disabled="!selectedFirmware || loadingFirmwares || uploadingFirmware || deletingFirmware || previewing || creatingBatch" @click="confirmDeleteFirmware">删除固件</button>
+            </div>
           </div>
           <div v-if="selectedFirmware" class="firmware-meta">
             <div><span>固件版本</span><strong>{{ selectedFirmware.firmwareVersion || '未识别' }}</strong></div>
@@ -83,7 +86,7 @@
           </div>
 
           <div v-if="scope === 'all'" class="ota-inline-notice">将对全部已绑定设备发起更新。开始前会逐台重新校验在线状态，离线设备不会下发。</div>
-          <div class="ota-actions"><button class="primary-btn" type="button" :disabled="previewing || !firmwareFile || !canPreview" @click="previewTargets">{{ previewing ? '正在预览...' : '预览升级范围' }}</button></div>
+          <div class="ota-actions"><button class="primary-btn" type="button" :disabled="previewing || deletingFirmware || !firmwareFile || !canPreview" @click="previewTargets">{{ previewing ? '正在预览...' : '预览升级范围' }}</button></div>
         </div>
       </section>
 
@@ -180,6 +183,10 @@
       <p class="confirm-copy">识别版本：<strong>{{ uploadCandidate?.version || '未识别版本' }}</strong>；文件大小：<strong>{{ formatBytes(uploadCandidate?.size) }}</strong>。</p>
       <p class="confirm-copy ota-confirm-warning">上传不会自动开始设备升级；上传完成后可在固件下拉框选择新旧任一版本。若设备 Bootloader 禁止降级，设备可能会拒绝旧版本。</p>
     </AppModal>
+    <AppModal v-model="deleteConfirmVisible" title="确认删除固件" confirm-text="删除固件" danger :loading="deletingFirmware" @confirm="deleteFirmware">
+      <p class="confirm-copy">将永久删除服务器固件 <strong>{{ firmwareToDelete?.firmwareFile }}</strong>（版本：<strong>{{ firmwareToDelete?.firmwareVersion || '未识别版本' }}</strong>）。删除后无法再选择或下载该文件，需要重新上传才能使用。</p>
+      <p class="confirm-copy ota-confirm-warning">历史升级记录会保留；存在等待中、暂停队列中或正在升级的任务时，服务器会拒绝删除。</p>
+    </AppModal>
   </div>
 </template>
 
@@ -228,6 +235,9 @@ const uploadCandidate = ref(null);
 const uploadedFirmware = ref(null);
 const uploadConfirmVisible = ref(false);
 const uploadingFirmware = ref(false);
+const deleteConfirmVisible = ref(false);
+const firmwareToDelete = ref(null);
+const deletingFirmware = ref(false);
 const manualRefreshKey = inject('manualRefreshKey', null);
 let pollTimer = null;
 let polling = false;
@@ -272,7 +282,7 @@ const inspectFirmwareFile = async (event) => {
 };
 
 const uploadFirmware = async () => {
-  if (!uploadCandidate.value) return;
+  if (!uploadCandidate.value || uploadingFirmware.value || deletingFirmware.value) return;
   uploadingFirmware.value = true;
   try {
     const result = await api.uploadBinary('/api/ota/firmwares', uploadCandidate.value.file);
@@ -287,6 +297,30 @@ const uploadFirmware = async () => {
   } catch (error) { showToast(error.message, 'error'); }
   finally { uploadingFirmware.value = false; }
 };
+const confirmDeleteFirmware = () => {
+  if (!selectedFirmware.value) return;
+  firmwareToDelete.value = { ...selectedFirmware.value };
+  deleteConfirmVisible.value = true;
+};
+
+const deleteFirmware = async () => {
+  if (!firmwareToDelete.value || deletingFirmware.value || uploadingFirmware.value || creatingBatch.value) return;
+  const filename = firmwareToDelete.value.firmwareFile;
+  deletingFirmware.value = true;
+  try {
+    await api.delete(`/api/ota/firmwares/${encodeURIComponent(filename)}`);
+    firmwares.value = firmwares.value.filter(item => item.firmwareFile !== filename);
+    if (firmwareFile.value === filename) firmwareFile.value = '';
+    if (uploadedFirmware.value?.firmwareFile === filename) uploadedFirmware.value = null;
+    clearPreview();
+    confirmVisible.value = false;
+    deleteConfirmVisible.value = false;
+    firmwareToDelete.value = null;
+    showToast('固件已删除');
+  } catch (error) { showToast(error.message, 'error'); }
+  finally { deletingFirmware.value = false; }
+};
+
 const selectScope = (nextScope) => {
   scope.value = nextScope;
   clearPreview();
@@ -294,9 +328,14 @@ const selectScope = (nextScope) => {
 };
 
 const loadFirmwares = async () => {
+  if (deletingFirmware.value) return;
   loadingFirmwares.value = true;
   try {
     firmwares.value = await api.get('/api/ota/firmwares');
+    if (firmwareFile.value && !selectedFirmware.value) {
+      firmwareFile.value = '';
+      clearPreview();
+    }
     if (firmwares.value.length === 1) firmwareFile.value = firmwares.value[0].firmwareFile;
   } catch (error) { showToast(error.message, 'error'); }
   finally { loadingFirmwares.value = false; }
@@ -360,6 +399,7 @@ const previewTargets = async () => {
 };
 
 const createBatch = async () => {
+  if (deletingFirmware.value || creatingBatch.value) return;
   creatingBatch.value = true;
   try {
     const result = await api.post('/api/ota/batches', getScopePayload());
@@ -469,6 +509,9 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 .ota-panel-body { padding: 22px; }
 .ota-panel-body .form-field { max-width: 640px; }
 .ota-panel-body .form-control { width: 100%; }
+.firmware-select-control { display: flex; align-items: center; gap: 12px; }
+.firmware-select-control .form-control { flex: 1; min-width: 0; }
+.firmware-select-control .danger-btn { flex: none; }
 .firmware-meta { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(120px, .6fr) minmax(220px, 2fr); gap: 14px; margin-top: 18px; }
 .upload-control { display: grid; gap: 8px; }
 .upload-control input { max-width: 520px; color: var(--ink); font-size: 13px; }
@@ -525,6 +568,9 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 .ota-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #3157e5, #8199f5); transition: width .25s ease; }
 .ota-task-table td small { color: var(--muted); font-size: 10px; }
 .ota-confirm-warning { color: #9a6a20; }
+@media (max-width: 600px) {
+  .firmware-select-control { align-items: stretch; flex-direction: column; }
+}
 @media (max-width: 900px) {
   .scope-cards { grid-template-columns: 1fr; }
   .firmware-meta, .preview-stats, .batch-summary { grid-template-columns: 1fr; }
