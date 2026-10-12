@@ -7,7 +7,26 @@ export const appUpdateState = reactive({ visible: false, release: null, ownerRou
 export const closeAppUpdate = () => { appUpdateState.visible = false; };
 let checking = false;
 let lastChecked = 0;
+let retryTimer = null;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const logUpdate = (message, details) => console.info(`[App更新] ${message} ${JSON.stringify(details)}`);
+const checkError = (message, details = {}) => Object.assign(new Error(message), details);
+
+const retryAfterStartup = (remaining = 20) => {
+    if (retryTimer || !remaining) return;
+    retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (appUpdateState.visible) return;
+        const pages = getCurrentPages();
+        const route = pages[pages.length - 1]?.route;
+        // 登录状态检查和 reLaunch 完成后，弹窗才挂在用户实际停留的页面。
+        if (!route || route === 'pages/launch/index' || checking || getApp().globalData?.bluetoothOtaBusy) {
+            retryAfterStartup(remaining - 1);
+            return;
+        }
+        checkAndOpenAppUpdate({ source: 'startup-retry' });
+    }, 1500);
+};
 
 export const getInstalledApp = () => {
     if (typeof plus === 'undefined' || plus.os.name !== 'Android') return null;
@@ -17,24 +36,45 @@ export const getInstalledApp = () => {
     return { packageName: String(activity.getPackageName()), versionCode: Number(plus.runtime.versionCode), versionName: String(plus.runtime.version), sdkVersion: Number(Build.SDK_INT) };
 };
 
-export const checkAppVersion = () => new Promise((resolve, reject) => {
+export const checkAppVersion = ({ timeout = 8000 } = {}) => new Promise((resolve, reject) => {
     let current;
     try { current = getInstalledApp(); } catch (error) { reject(error); return; }
-    if (!current || !Number.isInteger(current.versionCode) || current.versionCode <= 0) { resolve(null); return; }
+    if (!current) { resolve(null); return; }
+    if (!Number.isInteger(current.versionCode) || current.versionCode <= 0) {
+        reject(checkError('无法读取当前安装包版本号', { reason: 'invalid-version', current })); return;
+    }
+    const url = API_BASE_URL + '/api/app/check';
+    logUpdate('开始检查', { ...current, url, timeout });
+    if (/^(io\.dcloud\.HBuilder|io\.dcloud\.uniapp)(\.|$)/i.test(current.packageName)) {
+        logUpdate('当前为调试基座，请用同包名的正式 APK 验证覆盖更新', { packageName: current.packageName, versionCode: current.versionCode });
+    }
     const cached = uni.getStorageSync(APK_CACHE_KEY);
     if (cached?.versionCode && current.versionCode >= Number(cached.versionCode)) {
         removeAppApk(cached.filePath);
         uni.removeStorageSync(APK_CACHE_KEY);
     }
     uni.request({
-        url: API_BASE_URL + '/api/app/check', method: 'GET', data: current, timeout: 3000,
+        url, method: 'GET', data: current, timeout,
         success: res => {
-            if (res.statusCode !== 200 || res.data?.code !== 0) { reject(new Error(res.data?.message || '检查更新失败')); return; }
+            if (res.statusCode !== 200 || res.data?.code !== 0) {
+                reject(checkError(res.data?.message || `检查更新失败（HTTP ${res.statusCode}）`, { reason: 'response', statusCode: res.statusCode, apiCode: res.data?.code, url })); return;
+            }
             const release = res.data.data?.release;
-            if (res.data.data?.hasUpdate && release?.packageName === current.packageName && Number(release.versionCode) > current.versionCode) resolve(release);
-            else resolve(null);
+            logUpdate('检查结果', { current, hasUpdate: res.data.data?.hasUpdate, latest: release ? { packageName: release.packageName, versionCode: release.versionCode, forceUpdate: release.forceUpdate } : null });
+            if (typeof res.data.data?.hasUpdate !== 'boolean') {
+                reject(checkError('更新接口返回的数据格式不正确', { reason: 'response-format' })); return;
+            }
+            if (!res.data.data.hasUpdate) { resolve(null); return; }
+            if (!release?.id || release.packageName !== current.packageName || !Number.isInteger(Number(release.versionCode)) || Number(release.versionCode) <= current.versionCode) {
+                reject(checkError('发布信息与当前安装包不匹配', { reason: 'release-mismatch', current })); return;
+            }
+            resolve(release);
         },
-        fail: () => reject(new Error('检查更新失败，请检查网络后重试')),
+        fail: error => {
+            const errMsg = String(error.errMsg || 'request:fail');
+            const timedOut = /timeout|超时/i.test(errMsg);
+            reject(checkError(timedOut ? '检查更新超时，请稍后重试' : '无法连接更新服务，请检查网络', { reason: 'network', errMsg, errCode: error.errCode, url, timeout }));
+        },
     });
 });
 
@@ -44,24 +84,30 @@ export const checkAndOpenAppUpdate = async ({ source = 'background', manual = fa
         return false;
     }
     if (appUpdateState.visible) return true;
-    if (!manual && source === 'background' && Date.now() - lastChecked < 6 * 60 * 60 * 1000) return false;
+    if (!manual && source === 'background' && Date.now() - lastChecked < 6 * 60 * 60 * 1000) {
+        logUpdate('跳过重复前台检查', { reason: 'recent-success', lastChecked });
+        return false;
+    }
     checking = true;
     try {
-        const release = await checkAppVersion();
+        const release = await checkAppVersion({ timeout: source === 'startup' ? 3000 : 8000 });
         lastChecked = Date.now();
         if (getApp().globalData?.bluetoothOtaBusy) return false;
         if (!release) {
             if (manual) uni.showToast({ title: '当前已是最新版本', icon: 'none', duration: 2000 });
             return false;
         }
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
         const pages = getCurrentPages();
         const ownerRoute = pages[pages.length - 1]?.route;
         if (!ownerRoute) return false;
         Object.assign(appUpdateState, { visible: true, release, ownerRoute, source });
+        logUpdate('打开更新弹窗', { ownerRoute, source, versionCode: release.versionCode });
         return true;
     } catch (error) {
         if (manual) uni.showToast({ title: error.message || '检查更新失败', icon: 'none', duration: 2000 });
-        console.info('[App更新] 检查未完成', { message: error.message || '无法检查更新' });
+        logUpdate('检查未完成', { source, message: error.message || '无法检查更新', reason: error.reason, errMsg: error.errMsg, errCode: error.errCode, statusCode: error.statusCode, apiCode: error.apiCode, url: error.url, timeout: error.timeout });
+        if (source === 'startup' && error.reason === 'network') retryAfterStartup();
         return false;
     } finally { checking = false; }
 };
