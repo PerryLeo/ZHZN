@@ -117,6 +117,13 @@
                             <text class="iconfont icon-arrow-right"></text>
                         </view>
                     </view>
+                    <view class="setting-item" @click="otaPanel?.open()">
+                        <text class="label">OTA升级</text>
+                        <view class="right-box">
+                            <text class="value highlight">选择固件</text>
+                            <text class="iconfont icon-arrow-right"></text>
+                        </view>
+                    </view>
                     <view class="setting-item">
                         <text class="label">设备版本</text>
                         <view class="right-box">
@@ -146,6 +153,8 @@
                 <view class="bottom-placeholder"></view>
             </scroll-view>
         </view>
+
+        <BluetoothOta ref="otaPanel" :device-name="remarkName || initialName" :current-version="version" @busy-change="handleOtaBusyChange" />
 
         <view class="custom-modal-mask" v-if="responseModalVisible" @click="responseModalVisible = false">
             <view class="custom-modal response-modal" @click.stop>
@@ -187,9 +196,14 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onLoad, onHide, onShow, onBackPress } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
 import { TOKEN_KEY } from '@/common/config.js';
+import BluetoothOta from '@/components/bluetooth-ota/bluetooth-ota.vue';
+
+const otaPanel = ref(null);
+const otaBusy = ref(false);
+let pageVisible = true;
 
 const initialName = ref('未连接设备');
 const remarkName = ref('');
@@ -262,6 +276,21 @@ onMounted(() => {
     if (!readInterval) startListening();
 });
 
+onShow(() => {
+    pageVisible = true;
+    startListening();
+});
+onHide(() => {
+    pageVisible = false;
+    stopListening();
+    otaPanel.value?.cancel();
+});
+onBackPress(() => {
+    if (!otaBusy.value) return false;
+    uni.showToast({ title: '升级进行中，请保持在当前页面', icon: 'none', duration: 2000 });
+    return true;
+});
+
 onUnmounted(() => {
     if (readInterval) {
         clearInterval(readInterval);
@@ -273,7 +302,26 @@ onUnmounted(() => {
     }
 });
 
+const stopListening = () => {
+    if (readInterval) clearInterval(readInterval);
+    readInterval = null;
+};
+const handleOtaBusyChange = busy => {
+    otaBusy.value = busy;
+    getApp().globalData.bluetoothOtaBusy = busy;
+    if (busy) {
+        stopListening();
+        if (syncTimeout) clearTimeout(syncTimeout);
+        syncTimeout = null;
+        isWaitingSync.value = false;
+        isWaitingCustom.value = false;
+    } else if (pageVisible) {
+        startListening();
+    }
+};
+
 const startListening = () => {
+    if (readInterval || otaBusy.value || !pageVisible) return;
     const socket = getApp().globalData?.sppSocket;
     if (!socket || !socket.isConnected()) return;
 
@@ -284,7 +332,7 @@ const startListening = () => {
         readInterval = setInterval(() => {
             try {
                 if (!socket || !socket.isConnected()) {
-                    clearInterval(readInterval);
+                    stopListening();
                     return;
                 }
                 const available = inputStream.available();
@@ -311,7 +359,7 @@ const startListening = () => {
                     }
                 }
             } catch (err) {
-                clearInterval(readInterval);
+                stopListening();
             }
         }, 100);
     } catch (e) {
@@ -319,7 +367,13 @@ const startListening = () => {
     }
 };
 
-const goBack = () => uni.navigateBack();
+const goBack = () => {
+    if (otaBusy.value) {
+        uni.showToast({ title: '升级进行中，请保持在当前页面', icon: 'none', duration: 2000 });
+        return;
+    }
+    uni.navigateBack();
+};
 
 const handleDataBlur = (header, val) => {
     setDeviceData(header + val + '\n')
@@ -360,6 +414,7 @@ const copyResponse = () => {
 
 const setDeviceData = (cmd) => {
     if (!cmd) return;
+    if (otaBusy.value) return;
     try {
         const app = getApp();
         const socket = app.globalData?.sppSocket;

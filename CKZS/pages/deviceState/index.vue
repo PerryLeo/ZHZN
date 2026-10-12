@@ -239,6 +239,7 @@ onUnmounted(() => {
 });
 
 const syncTime = () => {
+    if (getApp().globalData?.bluetoothOtaBusy) return;
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
@@ -269,6 +270,7 @@ const syncTime = () => {
 };
 
 const sendInitCommand = () => {
+    if (getApp().globalData?.bluetoothOtaBusy) return;
     try {
         const app = getApp();
         const socket = app.globalData?.sppSocket;
@@ -337,6 +339,7 @@ const stopListening = () => {
 };
 
 const startListening = () => {
+    if (getApp().globalData?.bluetoothOtaBusy) return;
     const socket = getApp().globalData?.sppSocket;
     if (!socket || !socket.isConnected()) return;
 
