@@ -31,41 +31,17 @@
       <view class="loader-dot"></view>
       <view class="loader-dot"></view>
     </view>
+    <app-update-popup page-route="pages/launch/index" />
   </view>
 </template>
 
 <script setup>
 import { onMounted } from 'vue';
-import { API_BASE_URL, TOKEN_KEY, USER_KEY } from '@/common/config.js';
+import { checkAndOpenAppUpdate } from '@/common/appUpdate.js';
+import { navigateAfterStartup } from '@/common/appStartup.js';
 
-const go = (url) => uni.reLaunch({ url });
-
-const checkAndGo = () => {
-  const token = uni.getStorageSync(TOKEN_KEY);
-
-  if (!token) {
-    go('/pages/login/login');
-    return;
-  }
-
-  uni.request({
-    url: API_BASE_URL + '/api/users/profile',
-    method: 'GET',
-    header: { 'Authorization': `Bearer ${token}` },
-    success: (res) => {
-      if (res.data.code === 0) {
-        uni.setStorageSync(USER_KEY, JSON.stringify(res.data.data));
-        go('/pages/home/index');
-      } else {
-        uni.removeStorageSync(TOKEN_KEY);
-        uni.removeStorageSync(USER_KEY);
-        go('/pages/login/login');
-      }
-    },
-    fail: () => {
-      go('/pages/home/index');
-    },
-  });
+const checkAndGo = async () => {
+  if (!await checkAndOpenAppUpdate({ source: 'startup' })) navigateAfterStartup();
 };
 
 onMounted(() => {

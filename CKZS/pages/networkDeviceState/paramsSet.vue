@@ -123,10 +123,11 @@
                             <text class="value">{{ version }}</text>
                         </view>
                     </view>
-                    <view class="setting-item">
+                    <view class="setting-item" @click="checkAndOpenAppUpdate({ source: 'manual', manual: true })">
                         <text class="label">APP版本</text>
                         <view class="right-box">
                             <text class="value">{{ appVersion }}</text>
+                            <text class="iconfont icon-arrow-right"></text>
                         </view>
                     </view>
                     <view class="setting-item">
@@ -182,6 +183,7 @@
             </view>
         </view>
 
+        <app-update-popup page-route="pages/networkDeviceState/paramsSet" />
     </view>
 </template>
 
@@ -189,6 +191,7 @@
 import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
+import { checkAndOpenAppUpdate, getInstalledApp } from '@/common/appUpdate.js';
 
 const remarkName = ref('');
 const savedRemarkName = ref('');
@@ -244,7 +247,7 @@ onLoad((options) => {
 
     uni.getSystemInfo({
         success: (res) => {
-            appVersion.value = res.appWgtVersion || '';
+            appVersion.value = getInstalledApp()?.versionName || res.appWgtVersion || '';
         },
         fail: (error) => {
             console.error('获取系统信息失败', error);

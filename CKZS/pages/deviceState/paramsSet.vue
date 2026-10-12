@@ -130,10 +130,11 @@
                             <text class="value">{{ version }}</text>
                         </view>
                     </view>
-                    <view class="setting-item">
+                    <view class="setting-item" @click="checkAndOpenAppUpdate({ source: 'manual', manual: true })">
                         <text class="label">APP版本</text>
                         <view class="right-box">
                             <text class="value">{{ appVersion }}</text>
+                            <text class="iconfont icon-arrow-right"></text>
                         </view>
                     </view>
                     <view class="setting-item">
@@ -154,7 +155,7 @@
             </scroll-view>
         </view>
 
-        <BluetoothOta ref="otaPanel" :device-name="remarkName || initialName" :current-version="version" @busy-change="handleOtaBusyChange" />
+        <BluetoothOta ref="otaPanel" :device-name="remarkName || initialName" :current-version="version" @busy-change="handleOtaBusyChange" @completed="handleOtaCompleted" />
 
         <view class="custom-modal-mask" v-if="responseModalVisible" @click="responseModalVisible = false">
             <view class="custom-modal response-modal" @click.stop>
@@ -191,6 +192,7 @@
             </view>
         </view>
 
+        <app-update-popup page-route="pages/deviceState/paramsSet" />
     </view>
 </template>
 
@@ -200,6 +202,7 @@ import { onLoad, onHide, onShow, onBackPress } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
 import { TOKEN_KEY } from '@/common/config.js';
 import BluetoothOta from '@/components/bluetooth-ota/bluetooth-ota.vue';
+import { checkAndOpenAppUpdate, getInstalledApp } from '@/common/appUpdate.js';
 
 const otaPanel = ref(null);
 const otaBusy = ref(false);
@@ -263,7 +266,7 @@ onLoad((options) => {
 
     uni.getSystemInfo({
         success: (res) => {
-            appVersion.value = res.appWgtVersion;
+            appVersion.value = getInstalledApp()?.versionName || res.appWgtVersion;
         },
         fail: (err) => {
             console.error('获取系统信息失败', err);
@@ -305,6 +308,24 @@ onUnmounted(() => {
 const stopListening = () => {
     if (readInterval) clearInterval(readInterval);
     readInterval = null;
+};
+const handleOtaCompleted = () => {
+    stopListening();
+    const app = getApp();
+    try { app.globalData?.sppSocket?.close(); } catch (error) {
+        console.info('[蓝牙OTA] 释放升级连接', { message: error.message });
+    }
+    app.globalData.sppSocket = null;
+    const pages = getCurrentPages();
+    const fallbackUrl = uni.getStorageSync(TOKEN_KEY) ? '/pages/home/index' : '/pages/index/index';
+    const returnToList = () => uni.reLaunch({ url: fallbackUrl });
+    for (let index = pages.length - 2; index >= 0; index--) {
+        if (['pages/home/index', 'pages/index/index'].includes(pages[index].route)) {
+            uni.navigateBack({ delta: pages.length - 1 - index, fail: returnToList });
+            return;
+        }
+    }
+    returnToList();
 };
 const handleOtaBusyChange = busy => {
     otaBusy.value = busy;

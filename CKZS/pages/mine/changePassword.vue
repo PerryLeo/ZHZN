@@ -33,6 +33,7 @@
         {{ submitting ? '提交中...' : '确认修改' }}
       </button>
     </view>
+    <app-update-popup page-route="pages/mine/changePassword" />
   </view>
 </template>
 

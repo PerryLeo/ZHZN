@@ -56,6 +56,7 @@
 
       <text class="switch" @click="goBack">已有账号？<text class="em">返回登录</text></text>
     </view>
+    <app-update-popup page-route="pages/login/register" />
   </view>
 </template>
 

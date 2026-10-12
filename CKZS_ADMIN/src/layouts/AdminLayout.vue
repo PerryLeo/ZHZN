@@ -51,6 +51,7 @@ const menu = [
   { name: 'devices', label: '设备管理', icon: 'device' },
   { name: 'users', label: '用户管理', icon: 'users' },
   { name: 'ota', label: 'OTA升级', icon: 'ota' },
+  { name: 'app-versions', label: 'App版本管理', icon: 'ota' },
   { name: 'commands', label: '指令控制', icon: 'command' },
 ];
 

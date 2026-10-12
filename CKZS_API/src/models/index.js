@@ -8,12 +8,14 @@ import {
   DeviceGroupMember,
 } from './deviceGroup.model.js';
 import { initOtaModels, OtaBatch, OtaTask } from './ota.model.js';
+import { initAppReleaseModel, AppRelease } from './appRelease.model.js';
 
 // 初始化所有模型
 initUserModel(sequelize);
 initDeviceModel(sequelize);
 initDeviceGroupModels(sequelize);
 initOtaModels(sequelize);
+initAppReleaseModel(sequelize);
 
 // 关联关系
 User.hasMany(Device, { foreignKey: 'userId', as: 'devices' });
@@ -66,4 +68,4 @@ export const syncDB = async () => {
   console.log('✅ 数据库表已同步');
 };
 
-export { User, Device, DeviceGroup, DeviceGroupMember, OtaBatch, OtaTask };
+export { User, Device, DeviceGroup, DeviceGroupMember, OtaBatch, OtaTask, AppRelease };

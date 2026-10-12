@@ -75,6 +75,7 @@
                 <text>{{ state.isScanning ? '停止搜索' : '重新搜索' }}</text>
             </button>
         </view>
+        <app-update-popup page-route="pages/index/bluetooth" />
     </view>
 </template>
 

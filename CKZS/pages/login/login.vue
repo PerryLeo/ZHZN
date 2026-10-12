@@ -49,6 +49,7 @@
 
       <text class="switch" @click="toRegister">还没有账号？<text class="em">立即注册</text></text>
     </view>
+    <app-update-popup page-route="pages/login/login" />
   </view>
 </template>
 

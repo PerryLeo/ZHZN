@@ -97,6 +97,7 @@
 				</view>
 			</view>
 		</view>
+	    <app-update-popup page-route="pages/index/index" />
 	</view>
 </template>
 

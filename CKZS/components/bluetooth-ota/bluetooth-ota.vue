@@ -49,7 +49,7 @@
                 <button v-else-if="busy" class="ota-primary" disabled>升级进行中</button>
                 <template v-else>
                     <button v-if="stage === 'failed'" class="ota-primary" @click="resetSelection">重新选择固件</button>
-                    <button class="ota-secondary" @click="close">{{ stage === 'rebooting' ? '完成' : '关闭' }}</button>
+                    <button class="ota-secondary" @click="handleDone">{{ stage === 'rebooting' ? '完成' : '关闭' }}</button>
                 </template>
             </view>
         </view>
@@ -63,7 +63,7 @@ import { getBluetoothOtaSocket, downloadBluetoothFirmware, readVerifiedFirmware,
 import { transferBluetoothFirmware } from '@/common/otaProtocol.js';
 
 const props = defineProps({ deviceName: { type: String, default: '当前设备' }, currentVersion: { type: String, default: '' } });
-const emit = defineEmits(['busy-change']);
+const emit = defineEmits(['busy-change', 'completed']);
 const visible = ref(false);
 const busy = ref(false);
 const loading = ref(false);
@@ -105,6 +105,11 @@ const open = () => {
     loadFirmwares();
 };
 const close = () => { if (!busy.value) visible.value = false; };
+const handleDone = () => {
+    if (busy.value) return;
+    close();
+    if (stage.value === 'rebooting') emit('completed');
+};
 const resetSelection = () => { stage.value = ''; loadFirmwares(); };
 const confirmUpgrade = () => {
     if (!selected.value || busy.value) return;
@@ -199,7 +204,7 @@ defineExpose({ open, cancel });
 .ota-file-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ota-file-version { font-size: 28rpx; color: #333; font-weight: 600; }
 .selected .ota-file-version { color: $primary-color; }
-.ota-filename { font-size: 22rpx; color: #777; margin: 8rpx 0; word-break: break-all; }
+.ota-filename { display: block; font-size: 22rpx; color: #777; margin: 8rpx 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ota-radio { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32rpx; height: 32rpx; margin-left: 18rpx; border: 2rpx solid #CCC; border-radius: 50%; }
 .selected .ota-radio { border-color: $primary-color; }
 .ota-radio-dot { width: 18rpx; height: 18rpx; background: $primary-color; border-radius: 50%; }

@@ -139,6 +139,7 @@
                 </view>
             </view>
         </view>
+        <app-update-popup page-route="pages/deviceState/index" />
     </view>
 </template>
 

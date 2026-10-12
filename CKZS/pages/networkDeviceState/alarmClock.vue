@@ -83,6 +83,7 @@
                 </view>
             </view>
         </view>
+        <app-update-popup page-route="pages/networkDeviceState/alarmClock" />
     </view>
 </template>
 

@@ -58,6 +58,7 @@
         </view>
       </view>
     </view>
+    <app-update-popup page-route="pages/mine/index" />
   </view>
 </template>
 

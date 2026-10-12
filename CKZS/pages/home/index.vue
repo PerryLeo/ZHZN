@@ -331,6 +331,7 @@
         </view>
       </view>
     </view>
+    <app-update-popup page-route="pages/home/index" />
   </view>
 </template>
 
