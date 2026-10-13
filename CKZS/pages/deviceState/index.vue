@@ -125,7 +125,7 @@
                         <view class="parameter-item"><text class="parameter-label">充电目标电压</text><view class="parameter-value"><text>{{ state.chargingTargetVoltage / 100 }}</text><text class="unit">V</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">充电电流预警</text><view class="parameter-value"><text>{{ state.chargingCurrentLimit / 1000 }}</text><text class="unit">A</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">启动最低电压</text><view class="parameter-value"><text>{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ state.autoShutdownTime }}</text><text class="unit">s</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ Number((Number(state.autoShutdownTime || 0) / 60).toFixed(2)) }}</text><text class="unit">min</text></view></view>
                     </view>
                 </view>
 

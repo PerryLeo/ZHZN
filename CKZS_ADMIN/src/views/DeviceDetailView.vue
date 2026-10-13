@@ -222,7 +222,7 @@ const parameterFields = [
   { key: 'chargingTargetVoltage', label: '充电目标电压', unit: 'V', command: '$d=', step: 0.01, scale: 100 },
   { key: 'chargingCurrentLimit', label: '充电电流预警', unit: 'A', command: '$e=', step: 0.001, scale: 1000 },
   { key: 'startMinimumVoltage', label: '启动最低电压', unit: 'V', command: '$f=', step: 0.01, scale: 100 },
-  { key: 'autoShutdownTime', label: '自动关机时间', unit: 's', command: '$g=', step: 1 },
+  { key: 'autoShutdownTime', label: '自动关机时间', unit: 'min', command: '$g=', step: 0.01, scale: 60 },
 ];
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
@@ -256,7 +256,7 @@ const metrics = computed(() => [
   { label: '充电目标电压', value: deviceState.chargingTargetVoltage / 100, unit: 'V' },
   { label: '充电电流预警', value: deviceState.chargingCurrentLimit / 1000, unit: 'A' },
   { label: '启动最低电压', value: deviceState.startMinimumVoltage / 100, unit: 'V' },
-  { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: 's' },
+  { label: '自动关机时间', value: Number((deviceState.autoShutdownTime / 60).toFixed(2)), unit: 'min' },
 ]);
 const formatRealtimeValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value)}${unit}` : '--';
 
@@ -283,7 +283,7 @@ const applyStateToForm = () => {
     chargingTargetVoltage: deviceState.chargingTargetVoltage / 100,
     chargingCurrentLimit: deviceState.chargingCurrentLimit / 1000,
     startMinimumVoltage: deviceState.startMinimumVoltage / 100,
-    autoShutdownTime: deviceState.autoShutdownTime,
+    autoShutdownTime: deviceState.autoShutdownTime / 60,
     runMode: deviceState.runMode === '手动' ? '1' : '0',
   });
 };

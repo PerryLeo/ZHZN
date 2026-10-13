@@ -4,7 +4,7 @@
 // 后端接口基础地址（开发环境）
 // Android 模拟器用 10.0.2.2 映射宿主机 localhost
 // 真机调试时改为电脑局域网 IP
-const API_BASE_URL = 'http://47.236.100.138';
+const API_BASE_URL = 'http://139.224.9.72';
 
 // 本地存储 key
 const TOKEN_KEY = 'AUTH_TOKEN';

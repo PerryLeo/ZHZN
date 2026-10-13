@@ -7,6 +7,7 @@
             <text v-if="release" class="update-version">{{ release.versionName }}</text>
             <text v-if="release" class="update-size">{{ formatSize(release.fileSize) }} · {{ release.forceUpdate ? '需要更新后继续使用' : '建议更新至最新版本' }}</text>
             <view v-if="busy" class="update-progress"><view class="update-progress-track"><view class="update-progress-fill" :style="{ width: progress + '%' }"></view></view><text>{{ stage === 'checking' ? '校验中' : '下载中' }} {{ progress }}%</text></view>
+            <text v-if="busy && stage === 'downloading' && downloadSpeed > 0" class="update-speed">{{ (downloadSpeed / 1024).toFixed(0) }} KB/s</text>
             <text v-if="message" class="update-message" :class="{ error: stage === 'failed' }">{{ message }}</text>
             <button v-if="release" class="update-primary" :disabled="busy || loading" @click="startUpdate">{{ loading ? '正在检查…' : busy ? '正在处理…' : ['ready', 'installing', 'permission'].includes(stage) ? '重新安装' : stage === 'failed' ? '重试更新' : '立即更新' }}</button>
             <button v-if="!busy && !loading && !release?.forceUpdate" class="update-secondary" @click="leave">稍后再说</button>
@@ -22,6 +23,7 @@ import { navigateAfterStartup } from '@/common/appStartup.js';
 
 const props = defineProps({ pageRoute: { type: String, required: true } });
 const release = ref(null), currentVersion = ref(''), loading = ref(true), busy = ref(false), stage = ref(''), progress = ref(0), message = ref('');
+const downloadSpeed = ref(0);
 let releaseId = '', source = 'startup', disposed = false, task = null, filePath = '', verifiedPath = '';
 const formatSize = bytes => `${(Number(bytes) / 1024 / 1024).toFixed(2)} MB`;
 const checkActive = () => { if (disposed) throw new Error('更新已停止'); };
@@ -64,14 +66,15 @@ const startUpdate = async () => {
         release.value = await getAppRelease(releaseId);
         checkActive();
         if (!filePath) {
-            stage.value = 'downloading'; progress.value = 0; message.value = '正在下载安装包';
-            filePath = await downloadAppApk(release.value, value => { if (!disposed) progress.value = value; }, download => { task = download; });
+            stage.value = 'downloading'; progress.value = 0; downloadSpeed.value = 0; message.value = '正在下载安装包';
+            filePath = await downloadAppApk(release.value, (value, speed) => { if (!disposed) { progress.value = value; downloadSpeed.value = speed; } }, download => { task = download; });
             checkActive();
         }
+        // 下载完成即缓存，读取包信息或系统安装失败时无需重下；每次安装仍重新校验。
+        uni.setStorageSync(APK_CACHE_KEY, { id: releaseId, versionCode: release.value.versionCode, sha256: release.value.sha256, filePath });
         stage.value = 'checking'; progress.value = 0; message.value = '正在校验安装包';
         verifiedPath = await verifyAppApk(filePath, release.value, checkActive, value => { progress.value = value; });
         checkActive();
-        uni.setStorageSync(APK_CACHE_KEY, { id: releaseId, versionCode: release.value.versionCode, sha256: release.value.sha256, filePath });
         if (!requestApkInstallPermission()) {
             stage.value = 'permission'; message.value = '请允许安装此来源的应用，返回后点击“重新安装”。';
             return;
@@ -85,8 +88,11 @@ const startUpdate = async () => {
         console.info('[App更新] 调起系统安装', { versionCode: release.value.versionCode });
     } catch (error) {
         stage.value = 'failed'; message.value = error.message || '更新失败，请重试';
-        removeAppApk(filePath); filePath = ''; verifiedPath = ''; uni.removeStorageSync(APK_CACHE_KEY);
-        console.info('[App更新] 更新未完成', { message: message.value });
+        verifiedPath = '';
+        if (error.discardApk) {
+            removeAppApk(filePath); filePath = ''; uni.removeStorageSync(APK_CACHE_KEY);
+        }
+        console.info('[App更新] 更新未完成 ' + JSON.stringify({ message: message.value, versionCode: release.value?.versionCode }));
     } finally { busy.value = false; task = null; }
 };
 watch(() => appUpdateState.visible && appUpdateState.ownerRoute === props.pageRoute, visible => {
@@ -94,7 +100,7 @@ watch(() => appUpdateState.visible && appUpdateState.ownerRoute === props.pageRo
     releaseId = appUpdateState.release.id;
     source = appUpdateState.source;
     release.value = appUpdateState.release;
-    stage.value = ''; progress.value = 0; message.value = ''; filePath = ''; verifiedPath = '';
+    stage.value = ''; progress.value = 0; downloadSpeed.value = 0; message.value = ''; filePath = ''; verifiedPath = '';
     loadRelease();
 }, { immediate: true });
 onUnmounted(() => { disposed = true; task?.abort(); });
@@ -109,6 +115,7 @@ onUnmounted(() => { disposed = true; task?.abort(); });
 .update-version { display: block; margin-top: 24rpx; font-size: 38rpx; font-weight: 600; color: $primary-color; }
 .update-size { display: block; margin-top: 12rpx; font-size: 24rpx; color: #777; }
 .update-progress { margin-top: 30rpx; color: $primary-color; font-size: 26rpx; }
+.update-speed { display: block; margin-top: 10rpx; color: #999; font-size: 24rpx; }
 .update-progress-track { height: 14rpx; border-radius: 12rpx; background: #F2F2F2; overflow: hidden; margin-bottom: 16rpx; }
 .update-progress-fill { height: 100%; background: $primary-color; transition: width 0.2s; }
 .update-message { display: block; margin-top: 24rpx; font-size: 26rpx; color: #666; line-height: 1.7; }

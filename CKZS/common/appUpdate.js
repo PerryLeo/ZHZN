@@ -122,16 +122,29 @@ export const getAppRelease = id => new Promise((resolve, reject) => uni.request(
 }));
 
 export const downloadAppApk = (release, onProgress, onTask) => new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    let lastProgressAt = startedAt, lastBytes = 0, bytesPerSecond = 0;
     const task = uni.downloadFile({
         url: `${API_BASE_URL}/api/app/releases/${encodeURIComponent(release.id)}/download`, timeout: 10 * 60 * 1000,
         success: result => {
+            logUpdate('下载安装包完成', { id: release.id, statusCode: result.statusCode, fileSize: release.fileSize, elapsedMs: Date.now() - startedAt });
             if (result.statusCode !== 200) { removeAppApk(result.tempFilePath); reject(new Error(`下载失败（HTTP ${result.statusCode}），请重新检查更新`)); return; }
             resolve(result.tempFilePath);
         },
-        fail: () => reject(new Error('下载失败，请检查网络后重试')),
+        fail: error => {
+            logUpdate('下载安装包失败', { id: release.id, elapsedMs: Date.now() - startedAt, errMsg: error.errMsg });
+            reject(new Error('下载失败，请检查网络后重试'));
+        },
     });
     onTask(task);
-    task.onProgressUpdate(result => onProgress(result.progress));
+    task.onProgressUpdate(result => {
+        const now = Date.now(), written = Number(result.totalBytesWritten);
+        if (Number.isFinite(written) && now - lastProgressAt >= 1000) {
+            bytesPerSecond = Math.max(0, (written - lastBytes) * 1000 / (now - lastProgressAt));
+            lastBytes = written; lastProgressAt = now;
+        }
+        onProgress(result.progress, bytesPerSecond);
+    });
 });
 
 export const removeAppApk = filePath => {
@@ -146,14 +159,27 @@ export const verifyAppApk = async (filePath, release, checkActive = () => {}, on
     const localPath = plus.io.convertLocalFileSystemURL(filePath).replace(/^file:\/\//, '');
     const file = plus.android.newObject('java.io.File', localPath);
     plus.android.importClass(file);
-    if (!file.isFile() || Number(file.length()) !== Number(release.fileSize)) throw new Error('安装包文件大小不匹配，请重新下载');
+    const expectedSize = Number(release.fileSize);
+    const actualSize = Number(file.length());
+    if (!file.isFile() || actualSize !== expectedSize) {
+        logUpdate('安装包大小不匹配', { id: release.id, expectedSize, actualSize });
+        throw Object.assign(new Error('安装包文件大小不匹配，请重新下载'), { discardApk: true });
+    }
     const MessageDigest = plus.android.importClass('java.security.MessageDigest');
     const ReflectArray = plus.android.importClass('java.lang.reflect.Array');
     const Byte = plus.android.importClass('java.lang.Byte');
     const Base64 = plus.android.importClass('android.util.Base64');
     const digest = MessageDigest.getInstance('SHA-256');
     plus.android.importClass(digest);
-    const stream = plus.android.newObject('java.io.FileInputStream', file);
+    const input = plus.android.newObject('java.io.FileInputStream', file);
+    let stream;
+    try {
+        // 由 Java 在读取时更新摘要，避免 read 和 update 之间跨桥传递可变 byte[]。
+        stream = plus.android.newObject('java.security.DigestInputStream', input, digest);
+    } catch (error) {
+        plus.android.invoke(input, 'close');
+        throw error;
+    }
     plus.android.importClass(stream);
     const buffer = ReflectArray.newInstance(Byte.TYPE, 64 * 1024);
     let consumed = 0;
@@ -162,7 +188,7 @@ export const verifyAppApk = async (filePath, release, checkActive = () => {}, on
             checkActive();
             const count = Number(stream.read(buffer));
             if (count < 0) break;
-            digest.update(buffer, 0, count);
+            if (!Number.isInteger(count) || count <= 0 || count > 64 * 1024) throw new Error('无法读取安装包，请重新下载');
             consumed += count;
             if (consumed % (2 * 1024 * 1024) < 64 * 1024) {
                 onProgress(Math.min(100, Math.round(consumed / Number(release.fileSize) * 100)));
@@ -172,15 +198,27 @@ export const verifyAppApk = async (filePath, release, checkActive = () => {}, on
     } finally { stream.close(); }
     checkActive();
     const hash = Array.from(decodeBase64(String(Base64.encodeToString(digest.digest(), 2)))).map(byte => byte.toString(16).padStart(2, '0')).join('');
-    if (consumed !== Number(release.fileSize) || hash !== release.sha256.toLowerCase()) throw new Error('安装包校验失败，请重新下载');
+    const expectedHash = release.sha256.toLowerCase();
+    logUpdate('安装包摘要校验', { id: release.id, expectedSize, actualSize, consumed, expectedHash, actualHash: hash, matched: consumed === expectedSize && hash === expectedHash });
+    if (consumed !== expectedSize || hash !== expectedHash) throw Object.assign(new Error('安装包内容校验失败，请重新下载'), { discardApk: true });
     const activity = plus.android.runtimeMainActivity();
     plus.android.importClass(activity);
     const manager = activity.getPackageManager();
     plus.android.importClass(manager);
     const info = manager.getPackageArchiveInfo(localPath, 0);
     if (!info) throw new Error('无法识别 APK 安装包');
-    plus.android.importClass(info);
-    if (String(info.packageName) !== release.packageName || Number(info.versionCode) !== Number(release.versionCode)) throw new Error('APK 包名或版本与发布信息不一致');
+    // PackageInfo 是 Java 实例，字段通过 Native.js 属性接口读取，不能依赖 JS 对象属性。
+    const rawPackageName = plus.android.getAttribute(info, 'packageName');
+    const rawVersionCode = plus.android.getAttribute(info, 'versionCode');
+    const actualPackageName = rawPackageName == null ? '' : String(rawPackageName);
+    const actualVersionCode = rawVersionCode == null ? NaN : Number(rawVersionCode);
+    logUpdate('APK 包信息校验', { id: release.id, expectedPackageName: release.packageName, actualPackageName, expectedVersionCode: release.versionCode, actualVersionCode: Number.isFinite(actualVersionCode) ? actualVersionCode : null });
+    if (!actualPackageName || !Number.isInteger(actualVersionCode) || actualVersionCode <= 0) {
+        throw new Error('无法读取 APK 包名或版本，安装包已保留，请重试校验');
+    }
+    if (actualPackageName !== release.packageName || actualVersionCode !== Number(release.versionCode)) {
+        throw Object.assign(new Error('APK 包名或版本与发布信息不一致'), { discardApk: true });
+    }
     onProgress(100);
     return localPath;
 };

@@ -105,7 +105,7 @@
                     </view>
                     <view class="setting-item">
                         <text class="label">自动关机时间</text>
-                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /><text class="unit">s</text></view>
+                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime * 60)" /><text class="unit">min</text></view>
                     </view>
                 </view>
 
@@ -255,7 +255,7 @@ onLoad((options) => {
             chargingTargetVoltage.value = (data.chargingTargetVoltage ?? 0) / 100;
             chargingCurrentLimit.value = (data.chargingCurrentLimit ?? 0) / 1000;
             startMinimumVoltage.value = (data.startMinimumVoltage ?? 0) / 100;
-            autoShutdownTime.value = data.autoShutdownTime ?? 0;
+            autoShutdownTime.value = (data.autoShutdownTime ?? 0) / 60;
             version.value = data.version;
             deviceMac.value = data.mac || '';
             deviceCode.value = data.deviceCode || '';

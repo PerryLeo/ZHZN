@@ -1,4 +1,4 @@
-const API_ORIGIN = 'http://47.236.100.138.nip.io'
+const API_ORIGIN = 'http://139.224.9.72'
 
 function createApiRequest(request) {
   const sourceUrl = new URL(request.url)

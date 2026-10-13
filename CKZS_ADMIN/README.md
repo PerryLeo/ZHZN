@@ -27,7 +27,7 @@
 
 管理端只允许 `role` 为 `admin` 的账号进入。登录、设备列表、用户列表、统计数据和设备操作均来自现有 Express 服务的真实接口。
 
-本地页面开发可在 `CKZS_ADMIN` 执行 `npm run dev`，Vite 会将 `/api` 请求代理到 APP 当前使用的线上接口 `http://47.236.100.138`。
+本地页面开发可在 `CKZS_ADMIN` 执行 `npm run dev`，Vite 会将 `/api` 请求代理到新服务器 API `http://139.224.9.72`。
 
 ## 功能
 
