@@ -102,7 +102,7 @@ export const AdminController = {
 
       const devices = await Device.findAll({
         where: { userId: user.id },
-        order: [['bindAt', 'DESC']],
+        order: [['bindAt', 'DESC'], ['id', 'DESC']],
       });
       return success(res, { user, devices });
     } catch (error) {
@@ -151,7 +151,7 @@ export const AdminController = {
       const { rows, count } = await Device.findAndCountAll({
         where,
         include: [{ model: User, as: 'owner', attributes: ['id', 'username'] }],
-        order: [['updatedAt', 'DESC']],
+        order: [['bindAt', 'DESC'], ['id', 'DESC']],
         limit: pageSize,
         offset,
         distinct: true,

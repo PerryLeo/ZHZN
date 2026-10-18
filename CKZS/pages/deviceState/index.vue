@@ -294,7 +294,7 @@ const sendInitCommand = () => {
 };
 
 const bindDeviceByIdentity = async () => {
-    if (!state.deviceCode || !state.initialName || bindingDeviceCode === state.deviceCode) return;
+    if (!/^\d+$/.test(state.deviceCode) || !state.initialName || bindingDeviceCode === state.deviceCode) return;
     if (!uni.getStorageSync(TOKEN_KEY)) return;
     bindingDeviceCode = state.deviceCode;
     console.info('[设备绑定] 开始绑定', {
@@ -328,7 +328,17 @@ const bindDeviceByIdentity = async () => {
             deviceName: state.initialName,
             error,
         });
-        uni.showToast({ title: typeof error === 'string' ? error : '设备绑定失败', icon: 'none', duration: 2000 });
+        const message = typeof error === 'string' ? error : '设备绑定失败';
+        if (message.includes('设备身份校验失败')) {
+            uni.showModal({
+                title: '设备身份校验失败',
+                content: message.replace(/^HTTP \d+:\s*/, '').replace(/^设备身份校验失败[：:]\s*/, ''),
+                showCancel: false,
+                confirmText: '确定',
+            });
+        } else {
+            uni.showToast({ title: message, icon: 'none', duration: 2000 });
+        }
     }
 };
 
@@ -459,9 +469,15 @@ const parseLine = (line) => {
     const currentMatch = line.match(/(?:^|[|\r\n])I_Chg:\s*(-?\d+(?:\.\d+)?)\s*A?/i);
     if (currentMatch) state.chargingCurrent = Number(currentMatch[1]);
 
-    const imeiMatch = line.match(/^DTU_IMEI:\s*([0-9A-Za-z-]+)/i);
+    const imeiMatch = line.match(/^DTU_IMEI:\s*(.*)$/i);
     if (imeiMatch) {
-        state.deviceCode = imeiMatch[1];
+        const imei = imeiMatch[1].trim();
+        if (!/^\d+$/.test(imei)) {
+            state.deviceCode = '';
+            console.info('[设备身份] 未获取到有效 IMEI，跳过绑定，蓝牙功能可继续使用', { line });
+            return;
+        }
+        state.deviceCode = imei;
         console.info('[设备身份] 收到 DTU_IMEI', { deviceCode: state.deviceCode, line });
         bindDeviceByIdentity();
         return;

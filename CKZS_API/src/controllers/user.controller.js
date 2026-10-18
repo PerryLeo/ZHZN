@@ -101,6 +101,7 @@ export const UserController = {
       // deviceName 是硬件返回的不可修改设备名称；initialName 仅兼容旧版 App。
       const deviceName = String(req.body.deviceName || req.body.initialName || '').trim();
       if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
+      if (!/^\d+$/.test(deviceCode)) return fail(res, '未获取到有效 IMEI，无法绑定设备');
       if (!deviceName) return fail(res, '缺少必填参数: deviceName');
       if (deviceCode.length > 100 || deviceName.length > 100) return fail(res, '设备身份信息长度不能超过 100 个字符');
 
@@ -239,7 +240,7 @@ export const UserController = {
 
       const { count, rows } = await Device.findAndCountAll({
         where,
-        order: [['bindAt', 'DESC']],
+        order: [['bindAt', 'DESC'], ['id', 'DESC']],
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
