@@ -15,12 +15,21 @@
                     <text class="status-label">当前状态</text>
                     <view class="status-main">
                         <text class="status-value">{{ state.deviceStatus || '未知' }}</text>
-                        <view
-                            class="device-control-button"
-                            :class="{ disabled: state.controlLoading || state.controlState === 'unknown' || state.controlState === 'returning' }"
-                            @click="handleDeviceControl"
-                        >
-                            <text>{{ getDeviceControlLabel() }}</text>
+                        <view class="device-control-actions">
+                            <view
+                                class="device-control-button"
+                                :class="{ disabled: state.controlLoading || state.translateLoading || state.controlState === 'unknown' || state.controlState === 'returning' }"
+                                @click="handleDeviceControl"
+                            >
+                                <text>{{ getDeviceControlLabel() }}</text>
+                            </view>
+                            <view
+                                class="device-control-button device-translate-button"
+                                :class="{ disabled: state.controlLoading || state.translateLoading }"
+                                @click="handleDeviceTranslate"
+                            >
+                                <text>{{ state.translateLoading ? '下发中' : '平移' }}</text>
+                            </view>
                         </view>
                     </view>
                 </view>
@@ -177,6 +186,7 @@ const state = reactive({
     controlState: 'unknown',
     controlStateLabel: '未知',
     controlLoading: false,
+    translateLoading: false,
     mac: '',
     deviceCode: '',
     initialName: '',
@@ -549,7 +559,7 @@ const getDeviceControlLabel = () => {
 };
 
 const handleDeviceControl = async () => {
-    if (state.controlLoading) return;
+    if (state.controlLoading || state.translateLoading) return;
     if (state.controlState === 'unknown' || state.controlState === 'returning') {
         uni.showToast({ title: state.controlState === 'returning' ? '设备归位中，请稍后操作' : '设备状态未确认，暂不可操作', icon: 'none', duration: 2000 });
         return;
@@ -565,6 +575,19 @@ const handleDeviceControl = async () => {
     await new Promise(resolve => setTimeout(resolve, 500));
     sendInitCommand();
     state.controlLoading = false;
+};
+
+const handleDeviceTranslate = async () => {
+    if (state.controlLoading || state.translateLoading) return;
+    state.translateLoading = true;
+    try {
+        if (!sendBluetoothCommand('$r')) return;
+        uni.showToast({ title: '已下发平移指令', icon: 'success', duration: 2000 });
+        await new Promise(resolve => setTimeout(resolve, 500));
+        sendInitCommand();
+    } finally {
+        state.translateLoading = false;
+    }
 };
 
 const handleAction = (type) => {
@@ -803,6 +826,12 @@ const handleRefresh = () => {
     transition: width 0.3s ease;
 }
 
+.device-control-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
 .device-control-button {
     width: 110rpx;
     height: 56rpx;
@@ -816,6 +845,13 @@ const handleRefresh = () => {
     color: #FFFFFF;
     font-size: 23rpx;
     font-weight: 600;
+
+    &.device-translate-button {
+        margin-left: 16rpx;
+        background: $primary-light;
+        box-shadow: inset 0 0 0 2rpx rgba($primary-color, 0.3);
+        color: $primary-dark;
+    }
 
     &.disabled {
         background: #D7DCE5;

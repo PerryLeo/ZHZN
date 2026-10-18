@@ -36,6 +36,13 @@
         <text class="action-text admin-action">重置密码</text>
         <text class="action-arrow iconfont icon-arrow-right"></text>
       </view>
+      <view class="action-btn" @click="handleCheckUpdate">
+        <text class="action-text">APP版本</text>
+        <view class="version-info">
+          <text class="version-text">{{ checkingUpdate ? '检查中...' : appVersion }}</text>
+          <text class="action-arrow iconfont icon-arrow-right"></text>
+        </view>
+      </view>
       <view class="action-btn danger" @click="handleLogout">
         <text class="action-text">退出登录</text>
         <text class="action-arrow iconfont icon-arrow-right"></text>
@@ -66,16 +73,31 @@
 import { ref, computed, onMounted } from 'vue';
 import http from '@/common/request.js';
 import { TOKEN_KEY, USER_KEY } from '@/common/config.js';
+import { checkAndOpenAppUpdate, getInstalledApp } from '@/common/appUpdate.js';
 
 const username = ref('');
 const isAdmin = ref(false);
 const showResetModal = ref(false);
 const resetUsername = ref('');
 const resetting = ref(false);
+const appVersion = ref('未知版本');
+const checkingUpdate = ref(false);
 
 const initial = computed(() => (username.value || '?')[0].toUpperCase());
 
 onMounted(() => {
+  uni.getSystemInfo({
+    success: (res) => {
+      try {
+        appVersion.value = getInstalledApp()?.versionName || res.appWgtVersion || '未知版本';
+      } catch (error) {
+        console.error('[App更新] 获取当前版本失败', error);
+      }
+    },
+    fail: (error) => {
+      console.error('[App更新] 获取系统信息失败', error);
+    }
+  });
   try {
     const cached = uni.getStorageSync(USER_KEY) || uni.getStorageSync('USER_KEY') || '{}';
     const info = JSON.parse(cached);
@@ -112,6 +134,23 @@ const handleResetPwd = async () => {
 
 const goChangePwd = () => {
   uni.navigateTo({ url: '/pages/mine/changePassword' });
+};
+
+const handleCheckUpdate = async () => {
+  if (checkingUpdate.value) return;
+  checkingUpdate.value = true;
+  try {
+    if (!getInstalledApp()) {
+      uni.showToast({ title: 'App 更新仅支持 Android 安装包', icon: 'none', duration: 2000 });
+      return;
+    }
+    await checkAndOpenAppUpdate({ source: 'manual', manual: true });
+  } catch (error) {
+    console.error('[App更新] 手动检查失败', error);
+    uni.showToast({ title: '无法读取当前版本，请稍后重试', icon: 'none', duration: 2000 });
+  } finally {
+    checkingUpdate.value = false;
+  }
 };
 
 const goBack = () => uni.navigateBack();
@@ -274,6 +313,17 @@ const handleLogout = () => {
 .action-arrow {
   font-size: 24rpx;
   color: #C0C4CC;
+}
+
+.version-info {
+  display: flex;
+  align-items: center;
+}
+
+.version-text {
+  margin-right: 16rpx;
+  font-size: 28rpx;
+  color: #999;
 }
 
 .admin-action {

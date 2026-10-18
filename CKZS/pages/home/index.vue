@@ -82,6 +82,9 @@
             <view class="batch-btn batch-btn-off" :class="{ disabled: batchCommandLoading || isBoundStatusChecking }" @click="turnAllOff">
               <text class="batch-btn-text">{{ batchCommandLoading ? '执行中...' : '全部暂停' }}</text>
             </view>
+            <view class="batch-btn batch-btn-translate" :class="{ disabled: batchCommandLoading || isBoundStatusChecking }" @click="translateAll">
+              <text class="batch-btn-text">{{ batchCommandLoading ? '执行中...' : '全部平移' }}</text>
+            </view>
           </view>
           <view class="bound-grid" v-if="!boundLoading && filteredBoundDevices.length > 0">
             <view
@@ -1160,6 +1163,8 @@ const turnAllOn = () => sendBatchDeviceCommand('$h=1\n', '开始');
 
 const turnAllOff = () => sendBatchDeviceCommand('$h=0\n', '暂停');
 
+const translateAll = () => sendBatchDeviceCommand('$r', '平移');
+
 const toBoundDevice = (item) => {
   if (item?.statusLoading) {
     uni.showToast({ title: '正在检测设备状态，请稍后进入', icon: 'none' });
@@ -1465,6 +1470,8 @@ const toBoundDevice = (item) => {
   box-shadow: 0 6rpx 20rpx rgba($primary-color, 0.2);
   margin-right: 20rpx;
 
+  &:last-child { margin-right: 0; }
+
   .batch-btn-text {
     font-size: 28rpx;
     font-weight: 600;
@@ -1474,9 +1481,15 @@ const toBoundDevice = (item) => {
   &.batch-btn-off {
     background: #F0F1F5;
     box-shadow: none;
-    margin-right: 0;
 
     .batch-btn-text { color: #5E6166; }
+  }
+
+  &.batch-btn-translate {
+    background: $primary-light;
+    box-shadow: inset 0 0 0 2rpx rgba($primary-color, 0.3);
+
+    .batch-btn-text { color: $primary-dark; }
   }
 
   &:active { opacity: 0.85; transform: scale(0.98); }
