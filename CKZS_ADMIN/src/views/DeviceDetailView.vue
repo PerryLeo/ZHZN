@@ -87,8 +87,8 @@
             <div v-for="item in parameterFields" :key="item.key" class="parameter-field">
               <label :for="`parameter-${item.key}`">{{ item.label }}</label>
               <div class="parameter-control">
-                <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.min" :max="item.max" :step="item.step">
-                <span>{{ item.unit }}</span>
+                <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.key === 'feedTimeout' ? 0 : item.min" :max="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 100 : item.max" :step="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 0.01 : item.step">
+                <span>{{ item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? '米' : item.unit }}</span>
                 <button type="button" :disabled="commandBusy || !canOperate" @click="saveParameter(item)">保存</button>
               </div>
             </div>
@@ -282,7 +282,9 @@ const applyStateToForm = () => {
     nearWaitTime: deviceState.nearWaitTime,
     farWaitTime: deviceState.farWaitTime,
     manualTripsVal: deviceState.manualTripsVal,
-    feedTimeout: deviceState.feedTimeout,
+    feedTimeout: deviceState.feedTimeoutDistance !== null
+      ? deviceState.feedTimeoutDistance / 100
+      : deviceState.feedTimeout,
     softLimit: deviceState.softLimit / 100,
     feedSpeed: deviceState.feedSpeed / 10,
     motorTorque: deviceState.motorTorque,
@@ -380,11 +382,18 @@ const handleDeviceControl = async () => {
 };
 
 const saveParameter = async (field, confirmedOutOfRange = false) => {
+  if (field.key === 'feedTimeout' && String(parameterForm[field.key] ?? '').trim() === '') {
+    return showToast('请输入有效的喂食超时时间', 'error');
+  }
   if (field.key === 'moveSpeed' && String(parameterForm[field.key] ?? '').trim() === '') {
     return showToast('请输入正确的移动速度', 'error');
   }
   const numericValue = Number(parameterForm[field.key]);
   if (!Number.isFinite(numericValue)) return showToast(`请输入正确的${field.label}`, 'error');
+  const usesFeedDistance = field.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null;
+  if (usesFeedDistance && (numericValue < 0 || numericValue > 100)) {
+    return showToast('喂食超时需为0-100米', 'error');
+  }
   if (field.key === 'moveSpeed' && (numericValue < 50 || numericValue > 100) && !confirmedOutOfRange) {
     pendingMoveSpeed.value = numericValue;
     moveSpeedConfirmVisible.value = true;
@@ -392,10 +401,11 @@ const saveParameter = async (field, confirmedOutOfRange = false) => {
   }
   if (field.min !== undefined && numericValue < field.min) return showToast(`${field.label}不能小于 ${field.min}`, 'error');
   if (field.max !== undefined && numericValue > field.max) return showToast(`${field.label}不能大于 ${field.max}`, 'error');
-  const commandValue = Math.round(numericValue * (field.scale || 1));
+  const command = usesFeedDistance ? '$i=' : field.command;
+  const commandValue = Math.round(numericValue * (usesFeedDistance ? 100 : field.scale || 1));
   commandBusy.value = true;
   try {
-    await sendCommand(`${field.command}${commandValue}`);
+    await sendCommand(`${command}${commandValue}`);
     showToast(`${field.label}已同步`);
   } catch (error) {
     showToast(error.message || '参数同步失败', 'error');

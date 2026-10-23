@@ -48,9 +48,9 @@
                     <view class="setting-item">
                         <text class="label">喂食超时</text>
                         <view class="right-box">
-                            <input class="item-input" v-model="feedTimeout" type="number"
-                                @blur="handleDataBlur('$5=', feedTimeout)" />
-                            <text class="unit">s</text>
+                            <input class="item-input" v-model="feedTimeout" type="number" min="0" :max="feedTimeoutUsesDistance ? 100 : undefined"
+                                :step="feedTimeoutUsesDistance ? 0.01 : 1" @blur="handleFeedTimeoutBlur" />
+                            <text class="unit">{{ feedTimeoutUsesDistance ? '米' : 's' }}</text>
                         </view>
                     </view>
                 </view>
@@ -215,6 +215,7 @@ const nearTime = ref('0');
 const manualTrips = ref('0');
 const runMode = ref('未知');
 const feedTimeout = ref('0');
+const feedTimeoutUsesDistance = ref(false);
 const softLimit = ref('0');
 const feedSpeed = ref('0');
 const motorTorque = ref('0');
@@ -248,6 +249,8 @@ onLoad((options) => {
             manualTrips.value = data.manualTripsVal;
             runMode.value = data.runMode;
             feedTimeout.value = data.feedTimeout;
+            feedTimeoutUsesDistance.value = data.feedTimeoutDistance !== null && data.feedTimeoutDistance !== undefined;
+            if (feedTimeoutUsesDistance.value) feedTimeout.value = (data.feedTimeoutDistance / 100).toFixed(2);
             softLimit.value = (data.softLimit / 100).toFixed(2);
             feedSpeed.value = Number.isInteger(data.feedSpeed / 10) ? data.feedSpeed / 10 : (data.feedSpeed / 10).toFixed(1);
             motorTorque.value = data.motorTorque;
@@ -398,6 +401,20 @@ const goBack = () => {
 
 const handleDataBlur = (header, val) => {
     setDeviceData(header + val + '\n')
+};
+
+const handleFeedTimeoutBlur = () => {
+    if (String(feedTimeout.value).trim() === '') {
+        uni.showToast({ title: '请输入有效的喂食超时时间', icon: 'none' });
+        return;
+    }
+    const value = Number(feedTimeout.value);
+    if (!Number.isFinite(value) || value < 0 || (feedTimeoutUsesDistance.value && value > 100)) {
+        uni.showToast({ title: feedTimeoutUsesDistance.value ? '喂食超时需为0-100米' : '请输入有效的喂食超时时间', icon: 'none' });
+        return;
+    }
+    const command = feedTimeoutUsesDistance.value ? `$i=${Math.round(value * 100)}` : `$5=${value}`;
+    setDeviceData(`${command}\n`);
 };
 
 const handleSoftLimitBlur = () => {
