@@ -12,16 +12,8 @@
       </div>
     </section>
 
-    <section v-if="latestPublished" class="panel download-panel">
-      <div class="panel-header"><div><h2>扫码下载最新版 App</h2><p>二维码长期有效，扫码后将直接下载当前已发布版本</p></div><span class="role-tag">{{ latestPublished.versionName }} · {{ latestPublished.versionCode }}</span></div>
-      <div class="download-content">
-        <img class="download-qr" :src="qrImageUrl" alt="最新版 App 下载二维码">
-        <div class="download-copy"><strong>扫码下载最新版 APK</strong><span>当前版本：{{ latestPublished.versionName }}（{{ latestPublished.versionCode }}）</span><span>发布于：{{ formatTime(latestPublished.publishedAt) }}</span><a :href="latestDownloadUrl" target="_blank" rel="noopener">直接下载 APK</a></div>
-      </div>
-    </section>
-
     <section class="panel">
-      <div class="panel-header"><div><h2>版本记录</h2><p>同一时间仅一个版本对外发布；撤回后停止提示和新的下载</p></div><button class="secondary-btn" type="button" :disabled="loading || uploading || acting" @click="load(page)">刷新</button></div>
+      <div class="panel-header"><div><h2>版本记录</h2><p>同一时间仅一个版本对外发布；撤回后停止提示和新的下载</p></div><div class="release-header-actions"><button class="secondary-btn" type="button" :disabled="!latestPublished" @click="qrVisible = true">扫码下载</button><button class="secondary-btn" type="button" :disabled="loading || uploading || acting" @click="load(page)">刷新</button></div></div>
       <div v-if="loadError" class="release-error">{{ loadError }}</div>
       <div class="table-wrap"><table class="data-table">
         <thead><tr><th>版本</th><th>安装包</th><th>更新方式</th><th>状态</th><th>发布时间</th><th>操作</th></tr></thead>
@@ -55,6 +47,13 @@
     <AppModal v-model="detailVisible" title="版本详情" confirm-text="关闭" :show-cancel="false" @confirm="detailVisible = false">
       <template v-if="detail"><p><strong>{{ detail.versionName }}</strong> · versionCode {{ detail.versionCode }}</p><p>{{ detail.packageName }}</p><p>上传人：{{ detail.operatorName || '--' }} · {{ formatTime(detail.createdAt) }}</p><label>APK SHA-256</label><p class="release-hash">{{ detail.sha256 }}</p><label>签名证书 SHA-256</label><p class="release-hash">{{ detail.certificateSha256 }}</p></template>
     </AppModal>
+    <AppModal v-model="qrVisible" title="扫码下载最新版 App" confirm-text="关闭" :show-cancel="false" @confirm="qrVisible = false">
+      <div v-if="latestPublished" class="download-dialog">
+        <img class="download-qr" :src="qrImageUrl" alt="最新版 App 下载二维码">
+        <strong>{{ latestPublished.versionName }} <span>（{{ latestPublished.versionCode }}）</span></strong>
+        <p>使用手机扫描二维码，下载最新版 APK</p>
+      </div>
+    </AppModal>
   </div>
 </template>
 
@@ -69,6 +68,7 @@ import AppPagination from '../components/AppPagination.vue';
 const candidate = ref(null), fileInput = ref(null), force = ref(false), uploading = ref(false), uploadProgress = ref(0);
 const releases = ref([]), loading = ref(false), loadError = ref(''), page = ref(1), total = ref(0), totalPages = ref(0), acting = ref(false);
 const latestPublished = ref(null);
+const qrVisible = ref(false);
 const latestDownloadUrl = computed(() => `${window.location.origin}/api/app/latest/download`);
 const qrImageUrl = computed(() => `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encodeURIComponent(latestDownloadUrl.value)}`);
 const editVisible = ref(false), editing = ref(null), editForce = ref(false);
@@ -123,11 +123,12 @@ onMounted(() => load());
 
 <style scoped>
 .app-versions > .panel + .panel { margin-top: 24px; }
-.download-content { display: flex; align-items: center; gap: 24px; padding: 24px; }
-.download-qr { width: 160px; height: 160px; border: 1px solid #eaecf0; border-radius: 8px; }
-.download-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; color: #667085; font-size: 13px; }
-.download-copy strong { color: #1d2939; font-size: 16px; }
-.download-copy a { color: #315ce8; text-decoration: none; }
+.release-header-actions { display: flex; gap: 10px; }
+.download-dialog { display: flex; flex-direction: column; align-items: center; padding: 8px 0 4px; text-align: center; }
+.download-qr { width: 220px; height: 220px; border: 1px solid #eaecf0; border-radius: 8px; }
+.download-dialog strong { margin-top: 16px; color: #1d2939; font-size: 16px; }
+.download-dialog strong span, .download-dialog p { color: #667085; }
+.download-dialog p { margin: 8px 0 0; font-size: 13px; }
 .release-form { padding: 24px; }
 .force-choice { display: flex; align-items: center; font-size: 14px; }
 .force-choice input { margin-right: 8px; }
