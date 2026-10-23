@@ -128,6 +128,16 @@ const appReleaseService = {
 
   async download(id) {
     const release = await this.getPublic(id);
+    return this.downloadRelease(release);
+  },
+
+  async downloadLatest() {
+    const release = await AppRelease.findOne({ where: { status: 'published' }, order: [['versionCode', 'DESC']] });
+    if (!release) fail('暂无已发布的 App 版本', 404);
+    return this.downloadRelease(release);
+  },
+
+  async downloadRelease(release) {
     const filePath = path.join(DIRECTORY, release.fileName);
     const stat = await fs.stat(filePath).catch(() => null);
     if (!stat?.isFile() || stat.size !== Number(release.fileSize)) fail('APK 文件不存在或已损坏', 404);

@@ -16,6 +16,15 @@ export const AppReleaseController = {
   publish: action(async (req, res) => success(res, await service.publish(req.params.id), '版本已发布')),
   withdraw: action(async (req, res) => success(res, await service.withdraw(req.params.id), '已撤回发布')),
   check: action(async (req, res) => { res.set('Cache-Control', 'no-store'); return success(res, await service.check(req.query)); }),
+  downloadLatest: action(async (req, res, next) => {
+    const { release, filePath } = await service.downloadLatest();
+    res.set('Cache-Control', 'no-cache');
+    res.set('X-APK-SHA256', release.sha256);
+    res.type('application/vnd.android.package-archive');
+    res.download(filePath, `ckzs-${release.versionCode}.apk`, error => {
+      if (error && !res.headersSent && !res.destroyed) next(error);
+    });
+  }),
   detail: action(async (req, res) => { res.set('Cache-Control', 'no-store'); return success(res, publicRelease(await service.getPublic(req.params.id))); }),
   download: action(async (req, res, next) => {
     const { release, filePath } = await service.download(req.params.id);

@@ -12,6 +12,14 @@
       </div>
     </section>
 
+    <section v-if="latestPublished" class="panel download-panel">
+      <div class="panel-header"><div><h2>扫码下载最新版 App</h2><p>二维码长期有效，扫码后将直接下载当前已发布版本</p></div><span class="role-tag">{{ latestPublished.versionName }} · {{ latestPublished.versionCode }}</span></div>
+      <div class="download-content">
+        <img class="download-qr" :src="qrImageUrl" alt="最新版 App 下载二维码">
+        <div class="download-copy"><strong>扫码下载最新版 APK</strong><span>当前版本：{{ latestPublished.versionName }}（{{ latestPublished.versionCode }}）</span><span>发布于：{{ formatTime(latestPublished.publishedAt) }}</span><a :href="latestDownloadUrl" target="_blank" rel="noopener">直接下载 APK</a></div>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="panel-header"><div><h2>版本记录</h2><p>同一时间仅一个版本对外发布；撤回后停止提示和新的下载</p></div><button class="secondary-btn" type="button" :disabled="loading || uploading || acting" @click="load(page)">刷新</button></div>
       <div v-if="loadError" class="release-error">{{ loadError }}</div>
@@ -51,7 +59,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { api } from '../services/api.js';
 import { showToast } from '../utils/toast.js';
 import { formatTime } from '../utils/format.js';
@@ -60,6 +68,9 @@ import AppPagination from '../components/AppPagination.vue';
 
 const candidate = ref(null), fileInput = ref(null), force = ref(false), uploading = ref(false), uploadProgress = ref(0);
 const releases = ref([]), loading = ref(false), loadError = ref(''), page = ref(1), total = ref(0), totalPages = ref(0), acting = ref(false);
+const latestPublished = ref(null);
+const latestDownloadUrl = computed(() => `${window.location.origin}/api/app/latest/download`);
+const qrImageUrl = computed(() => `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encodeURIComponent(latestDownloadUrl.value)}`);
 const editVisible = ref(false), editing = ref(null), editForce = ref(false);
 const actionVisible = ref(false), pendingAction = ref(''), actionRelease = ref(null), detailVisible = ref(false), detail = ref(null);
 const formatBytes = size => `${(Number(size) / 1024 / 1024).toFixed(2)} MB`;
@@ -74,7 +85,7 @@ const chooseFile = event => {
 const load = async (nextPage = 1) => {
   if (loading.value) return;
   loading.value = true; loadError.value = '';
-  try { const result = await api.get('/api/app/releases', { page: nextPage }); releases.value = result.list; page.value = result.page; total.value = result.total; totalPages.value = result.totalPages; }
+  try { const result = await api.get('/api/app/releases', { page: nextPage }); releases.value = result.list; if (result.page === 1) latestPublished.value = result.list.find(release => release.status === 'published') || null; page.value = result.page; total.value = result.total; totalPages.value = result.totalPages; }
   catch (error) { loadError.value = error.message; showToast(error.message, 'error'); }
   finally { loading.value = false; }
 };
@@ -112,6 +123,11 @@ onMounted(() => load());
 
 <style scoped>
 .app-versions > .panel + .panel { margin-top: 24px; }
+.download-content { display: flex; align-items: center; gap: 24px; padding: 24px; }
+.download-qr { width: 160px; height: 160px; border: 1px solid #eaecf0; border-radius: 8px; }
+.download-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; color: #667085; font-size: 13px; }
+.download-copy strong { color: #1d2939; font-size: 16px; }
+.download-copy a { color: #315ce8; text-decoration: none; }
 .release-form { padding: 24px; }
 .force-choice { display: flex; align-items: center; font-size: 14px; }
 .force-choice input { margin-right: 8px; }

@@ -5,6 +5,7 @@ import { AppReleaseController as controller } from '../controllers/appRelease.co
 
 const router = Router();
 router.get('/check', controller.check);
+router.get('/latest/download', controller.downloadLatest);
 router.get('/releases/:id', controller.detail);
 router.get('/releases/:id/download', controller.download);
 router.use(auth, requireAdmin);
