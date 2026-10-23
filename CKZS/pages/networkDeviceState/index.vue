@@ -117,7 +117,7 @@
                         <view class="parameter-item"><text class="parameter-label">近端等待时间</text><view class="parameter-value"><text>{{ state.nearWaitTime }}</text><text class="unit">s</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">远端等待时间</text><view class="parameter-value"><text>{{ state.farWaitTime }}</text><text class="unit">s</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">手动模式趟数</text><view class="parameter-value"><text>{{ state.manualTripsVal }}</text><text class="unit">趟</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">喂食超时时间</text><view class="parameter-value"><text>{{ state.feedTimeout }}</text><text class="unit">s</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">喂食超时</text><view class="parameter-value"><template v-if="state.feedTimeoutDistance !== null"><text>{{ (state.feedTimeoutDistance / 100).toFixed(2) }}</text><text class="unit">米</text></template><template v-else><text>{{ state.feedTimeout }}</text><text class="unit">s</text></template></view></view>
                         <view class="parameter-item">
                             <text class="parameter-label">软限位距离</text>
                             <view class="parameter-value">
@@ -167,6 +167,7 @@ const state = reactive({
     manualTripsVal: 0,
     runMode: '未知',
     feedTimeout: 0,
+    feedTimeoutDistance: null,
     feedTime: 0,
     softLimit: 0,
     feedSpeed: 0,
@@ -328,7 +329,7 @@ const parseDeviceResponse = (payload) => {
     if (versionMatch) state.version = versionMatch[1].trim();
 
     const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
-    const valuePattern = /\$([0-9ad-g])=(-?\d+(?:\.\d+)?)/g;
+    const valuePattern = /\$([0-9ad-gi])=(-?\d+(?:\.\d+)?)/g;
     let valueMatch = null;
     while ((valueMatch = valuePattern.exec(text)) !== null) {
         const key = valueMatch[1];
@@ -339,6 +340,7 @@ const parseDeviceResponse = (payload) => {
             case '3': state.manualTripsVal = value; break;
             case '4': state.runMode = modeMap[value] || '未知'; break;
             case '5': state.feedTimeout = value; break;
+            case 'i': state.feedTimeoutDistance = value; break;
             case '6': state.feedTime = value; break;
             case '7': state.softLimit = value; break;
             case '8': state.feedSpeed = value; break;

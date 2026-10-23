@@ -5,6 +5,7 @@ export const createDeviceState = () => ({
   manualTripsVal: 0,
   runMode: '未知',
   feedTimeout: 0,
+  feedTimeoutDistance: null,
   feedTime: 0,
   softLimit: 0,
   feedSpeed: 0,
@@ -140,6 +141,7 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
     2: 'farWaitTime',
     3: 'manualTripsVal',
     5: 'feedTimeout',
+    i: 'feedTimeoutDistance',
     6: 'feedTime',
     7: 'softLimit',
     8: 'feedSpeed',
@@ -150,7 +152,7 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
     f: 'startMinimumVoltage',
     g: 'autoShutdownTime',
   };
-  const valuePattern = /\$([0-9ad-g])=(-?\d+(?:\.\d+)?)/g;
+  const valuePattern = /\$([0-9ad-gi])=(-?\d+(?:\.\d+)?)/g;
   let valueMatch = null;
   while ((valueMatch = valuePattern.exec(text)) !== null) {
     const key = valueMatch[1];

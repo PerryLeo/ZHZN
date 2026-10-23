@@ -46,7 +46,7 @@
                         </view>
                     </view>
                     <view class="setting-item">
-                        <text class="label">喂食超时时间</text>
+                        <text class="label">喂食超时</text>
                         <view class="right-box">
                             <input class="item-input" v-model="feedTimeout" type="number"
                                 @blur="handleDataBlur('$5=', feedTimeout)" />
@@ -410,12 +410,25 @@ const handleSoftLimitBlur = () => {
 };
 
 const handleMoveSpeedBlur = () => {
-    const value = Number(moveSpeed.value);
-    if (!Number.isFinite(value) || value < 50 || value > 100) {
-        uni.showToast({ title: '移动速度需为50-100%', icon: 'none' });
+    if (String(moveSpeed.value).trim() === '') {
+        uni.showToast({ title: '请输入有效的移动速度', icon: 'none' });
         return;
     }
-    setDeviceData(`$a=${value}\n`);
+    const value = Number(moveSpeed.value);
+    if (!Number.isFinite(value)) {
+        uni.showToast({ title: '请输入有效的移动速度', icon: 'none' });
+        return;
+    }
+    const send = () => setDeviceData(`$a=${value}\n`);
+    if (value < 50 || value > 100) {
+        uni.showModal({
+            title: '确认下发移动速度',
+            content: `当前值为${value}%，超出常用范围50-100%，确认仍要下发吗？`,
+            success: (result) => { if (result.confirm) send(); }
+        });
+        return;
+    }
+    send();
 };
 
 const handleAutoDataBlur = () => {

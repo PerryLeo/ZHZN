@@ -156,6 +156,9 @@
     <AppModal v-model="unbindModalVisible" title="解绑设备" confirm-text="确认解绑" danger :loading="unbinding" @confirm="unbindDevice">
       <p class="confirm-copy">确认解除 <strong>{{ device.remarkName || '--' }}</strong> 与用户 <strong>{{ device.owner?.username || '--' }}</strong> 的绑定吗？解绑后 APP 将同步移除该设备。</p>
     </AppModal>
+    <AppModal v-model="moveSpeedConfirmVisible" title="确认下发移动速度" confirm-text="仍要下发" @confirm="confirmMoveSpeed">
+      <p class="confirm-copy">当前值为 <strong>{{ pendingMoveSpeed }}%</strong>，超出常用范围 50–100%，确认仍要下发吗？</p>
+    </AppModal>
   </div>
 </template>
 
@@ -181,6 +184,8 @@ const savingName = ref(false);
 const savingSlots = ref(false);
 const unbinding = ref(false);
 const unbindModalVisible = ref(false);
+const moveSpeedConfirmVisible = ref(false);
+const pendingMoveSpeed = ref(null);
 const activeTab = ref('status');
 const device = ref(null);
 const rawResponse = ref('');
@@ -214,11 +219,11 @@ const parameterFields = [
   { key: 'nearWaitTime', label: '近端等待时间', unit: '秒', command: '$1=', min: 0, step: 1 },
   { key: 'farWaitTime', label: '远端等待时间', unit: '秒', command: '$2=', min: 0, step: 1 },
   { key: 'manualTripsVal', label: '手动模式趟数', unit: '趟', command: '$3=', min: 0, step: 1 },
-  { key: 'feedTimeout', label: '喂食超时时间', unit: '秒', command: '$5=', min: 0, step: 1 },
+  { key: 'feedTimeout', label: '喂食超时', unit: '秒', command: '$5=', min: 0, step: 1 },
   { key: 'softLimit', label: '软限位距离', unit: '米', command: '$7=', min: 0, max: 100, step: 0.01, scale: 100 },
   { key: 'feedSpeed', label: '送料电机转速', unit: '圈/秒', command: '$8=', min: 0, step: 0.1, scale: 10 },
   { key: 'motorTorque', label: '送料电机扭矩', unit: '%', command: '$9=', min: 0, max: 100, step: 1 },
-  { key: 'moveSpeed', label: '移动速度', unit: '%', command: '$a=', min: 50, max: 100, step: 1 },
+  { key: 'moveSpeed', label: '移动速度', unit: '%', command: '$a=', step: 1 },
   { key: 'chargingTargetVoltage', label: '充电目标电压', unit: 'V', command: '$d=', step: 0.01, scale: 100 },
   { key: 'chargingCurrentLimit', label: '充电电流预警', unit: 'A', command: '$e=', step: 0.001, scale: 1000 },
   { key: 'startMinimumVoltage', label: '启动最低电压', unit: 'V', command: '$f=', step: 0.01, scale: 100 },
@@ -248,7 +253,9 @@ const metrics = computed(() => [
   { label: '近端等待时间', value: deviceState.nearWaitTime, unit: 's' },
   { label: '远端等待时间', value: deviceState.farWaitTime, unit: 's' },
   { label: '手动模式趟数', value: deviceState.manualTripsVal, unit: '趟' },
-  { label: '喂食超时时间', value: deviceState.feedTimeout, unit: 's' },
+  deviceState.feedTimeoutDistance !== null
+    ? { label: '喂食超时', value: (deviceState.feedTimeoutDistance / 100).toFixed(2), unit: '米' }
+    : { label: '喂食超时', value: deviceState.feedTimeout, unit: 's' },
   { label: '软限位距离', value: deviceState.softLimit > 0 ? deviceState.softLimit / 100 : '关闭', unit: deviceState.softLimit > 0 ? '米' : '' },
   { label: '送料电机转速', value: deviceState.feedSpeed / 10, unit: '圈/秒' },
   { label: '送料电机扭矩', value: deviceState.motorTorque, unit: '%' },
@@ -372,9 +379,17 @@ const handleDeviceControl = async () => {
   }
 };
 
-const saveParameter = async (field) => {
+const saveParameter = async (field, confirmedOutOfRange = false) => {
+  if (field.key === 'moveSpeed' && String(parameterForm[field.key] ?? '').trim() === '') {
+    return showToast('请输入正确的移动速度', 'error');
+  }
   const numericValue = Number(parameterForm[field.key]);
   if (!Number.isFinite(numericValue)) return showToast(`请输入正确的${field.label}`, 'error');
+  if (field.key === 'moveSpeed' && (numericValue < 50 || numericValue > 100) && !confirmedOutOfRange) {
+    pendingMoveSpeed.value = numericValue;
+    moveSpeedConfirmVisible.value = true;
+    return;
+  }
   if (field.min !== undefined && numericValue < field.min) return showToast(`${field.label}不能小于 ${field.min}`, 'error');
   if (field.max !== undefined && numericValue > field.max) return showToast(`${field.label}不能大于 ${field.max}`, 'error');
   const commandValue = Math.round(numericValue * (field.scale || 1));
@@ -387,6 +402,13 @@ const saveParameter = async (field) => {
   } finally {
     commandBusy.value = false;
   }
+};
+
+const confirmMoveSpeed = () => {
+  moveSpeedConfirmVisible.value = false;
+  parameterForm.moveSpeed = pendingMoveSpeed.value;
+  const field = parameterFields.find((item) => item.key === 'moveSpeed');
+  if (field) saveParameter(field, true);
 };
 
 const saveRunMode = async () => {
