@@ -129,22 +129,17 @@
                         <view class="parameter-item"><text class="parameter-label">送料电机转速</text><view class="parameter-value"><text>{{ Number.isInteger(state.feedSpeed / 10) ? state.feedSpeed / 10 : (state.feedSpeed / 10).toFixed(1) }}</text><text class="unit">圈/秒</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">送料电机扭矩</text><view class="parameter-value"><text>{{ state.motorTorque }}</text><text class="unit">%</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">移动速度</text><view class="parameter-value"><text>{{ state.moveSpeed }}</text><text class="unit">%</text></view></view>
-                    </view>
-                </view>
-
-                <view class="parameter-section">
-                    <view class="section-heading"><text class="heading-mark"></text><text>充电保护</text></view>
-                    <view class="parameter-grid">
                         <view class="parameter-item"><text class="parameter-label">充电目标电压</text><view class="parameter-value"><text>{{ state.chargingTargetVoltage / 100 }}</text><text class="unit">V</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">充电电流预警</text><view class="parameter-value"><text>{{ state.chargingCurrentLimit / 1000 }}</text><text class="unit">A</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">启动最低电压</text><view class="parameter-value"><text>{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ Number((Number(state.autoShutdownTime || 0) / 60).toFixed(2)) }}</text><text class="unit">min</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ state.autoShutdownTime }}</text><text class="unit">min</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">自动除雾时间</text><view class="parameter-value"><text>{{ formatDefogTime(state.defogTime) }}</text></view></view>
                     </view>
                 </view>
 
                 <view class="parameter-section last-section">
                     <view class="section-heading"><text class="heading-mark"></text><text>设备状态</text></view>
-                    <view class="parameter-grid">
+                    <view class="parameter-grid device-status-grid">
                         <view class="parameter-item"><text class="parameter-label">运行模式</text><view class="parameter-value highlight"><text>{{ state.runMode }}</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">风扇</text><view class="parameter-value" :class="{ 'highlight': state.fanStatus === 'ON' }"><text>{{ state.fanStatus === 'ON' ? '开启' : '关闭' }}</text></view></view>
                     </view>
@@ -159,6 +154,8 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { onLoad, onShow } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
+import { parseDeviceAlarms } from '@/common/deviceAlarm.js';
+import { formatDefogTime } from '@/common/defogTime.js';
 
 const state = reactive({
     currentTrip: 0,
@@ -177,6 +174,7 @@ const state = reactive({
     chargingCurrentLimit: 0,
     startMinimumVoltage: 0,
     autoShutdownTime: 0,
+    defogTime: null,
     deviceStatus: '',
     fanStatus: '',
     pumpStatus: '',
@@ -219,8 +217,6 @@ onLoad((options) => {
     if (options.deviceCode) state.deviceCode = decodeURIComponent(options.deviceCode);
     if (options.remarkName) state.remarkName = decodeURIComponent(options.remarkName);
     state.identityMismatch = options.identityMismatch === '1' || options.identityMismatch === 'true';
-    if (options.abnormalStatus !== undefined) state.abnormalStatus = decodeURIComponent(options.abnormalStatus);
-    state.hasAlarm = options.hasAlarm === '1' || options.hasAlarm === 'true';
 });
 
 onShow(() => {
@@ -298,6 +294,7 @@ const parseControlState = (status) => {
 const parseDeviceResponse = (payload) => {
     const text = extractResponseText(payload);
     if (!text) return;
+    Object.assign(state, parseDeviceAlarms(text));
 
     const statusMatch = text.match(/<([^>]+)>/);
     if (statusMatch) {
@@ -329,7 +326,7 @@ const parseDeviceResponse = (payload) => {
     if (versionMatch) state.version = versionMatch[1].trim();
 
     const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
-    const valuePattern = /\$([0-9ad-gi])=(-?\d+(?:\.\d+)?)/g;
+    const valuePattern = /\$([0-9ad-gij])=(-?\d+(?:\.\d+)?)/g;
     let valueMatch = null;
     while ((valueMatch = valuePattern.exec(text)) !== null) {
         const key = valueMatch[1];
@@ -350,6 +347,7 @@ const parseDeviceResponse = (payload) => {
             case 'e': state.chargingCurrentLimit = value; break;
             case 'f': state.startMinimumVoltage = value; break;
             case 'g': state.autoShutdownTime = value; break;
+            case 'j': state.defogTime = value; break;
         }
     }
 
@@ -937,7 +935,8 @@ const handleRefresh = () => refreshDeviceState({ syncClock: false, showLoading: 
         border-right: 1rpx solid #E4E8EF;
     }
 
-    &:nth-last-child(-n + 2) {
+    &:last-child,
+    &:nth-last-child(2):nth-child(odd) {
         border-bottom: 0;
     }
 }
@@ -970,6 +969,20 @@ const handleRefresh = () => refreshDeviceState({ syncClock: false, showLoading: 
         color: #2D3139;
         font-size: 22rpx;
         font-weight: 400;
+    }
+}
+
+.device-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    .parameter-item {
+        padding-left: 12rpx;
+        border-right: 1rpx solid #E4E8EF;
+        border-bottom: 0;
+
+        &:last-child {
+            border-right: 0;
+        }
     }
 }
 </style>

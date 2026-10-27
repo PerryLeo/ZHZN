@@ -15,6 +15,7 @@ export const createDeviceState = () => ({
   chargingCurrentLimit: 0,
   startMinimumVoltage: 0,
   autoShutdownTime: 0,
+  defogTime: null,
   deviceStatus: '等待设备响应',
   fanStatus: '',
   pumpStatus: '',
@@ -22,6 +23,8 @@ export const createDeviceState = () => ({
   deviceTime: '--:--:--',
   batteryLevel: null,
   chargingCurrent: null,
+  chargerVoltage: null,
+  batteryVoltage: null,
   abnormalStatus: '--',
   hasAlarm: false,
   controlState: 'unknown',
@@ -134,6 +137,8 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
   if (versionMatch) nextState.version = versionMatch[1].trim();
 
   Object.assign(nextState, parseDeviceStatusReport(text));
+  nextState.chargerVoltage = getStatusMetric(text, ['V_Chg']);
+  nextState.batteryVoltage = getStatusMetric(text, ['Bat']);
 
   const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
   const fieldMap = {
@@ -151,8 +156,9 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
     e: 'chargingCurrentLimit',
     f: 'startMinimumVoltage',
     g: 'autoShutdownTime',
+    j: 'defogTime',
   };
-  const valuePattern = /\$([0-9ad-gi])=(-?\d+(?:\.\d+)?)/g;
+  const valuePattern = /\$([0-9ad-gij])=(-?\d+(?:\.\d+)?)/g;
   let valueMatch = null;
   while ((valueMatch = valuePattern.exec(text)) !== null) {
     const key = valueMatch[1];
@@ -187,4 +193,18 @@ export const createSlotCommand = (slot, index) => {
   const trips = Math.min(Math.max(Number.parseInt(slot.trips, 10) || 0, 0), 99);
   const time = /^\d{2}:\d{2}$/.test(slot.time) ? slot.time.replace(':', '') : '0000';
   return `$${mode}=${String(trips).padStart(2, '0')}${time}`;
+};
+
+export const formatDefogTime = (value) => {
+  if (value === null || value === undefined || value === '') return '00:00';
+  const number = Number(value);
+  if (number === 0) return '关闭';
+  if (!Number.isInteger(number) || number < 1 || number > 2359 || number % 100 > 59) return '--';
+  return `${String(Math.floor(number / 100)).padStart(2, '0')}:${String(number % 100).padStart(2, '0')}`;
+};
+
+export const encodeDefogTime = (time) => {
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(time))) return null;
+  const value = Number(time.replace(':', ''));
+  return value === 0 ? null : value;
 };

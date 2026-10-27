@@ -4,7 +4,7 @@
     <p>未找到该设备，设备可能已经被删除。</p>
     <button class="secondary-btn" type="button" @click="router.push({ name: 'devices' })">返回设备管理</button>
   </div>
-  <div v-else class="device-detail-page">
+  <div v-else class="device-detail-page" :class="`detail-tab-${activeTab}`">
     <section class="detail-hero">
       <button class="detail-back" type="button" @click="router.push({ name: 'devices' })">
         <span aria-hidden="true">←</span> 返回设备列表
@@ -19,9 +19,7 @@
           <h2>{{ device.remarkName || '--' }}</h2>
             <span class="tag" :class="deviceIdentityStatus.tone">{{ deviceIdentityStatus.label }}</span>
             <span class="tag" :class="abnormalStatusTone">{{ deviceState.abnormalStatus }}</span>
-            <span class="tag" :class="isBound ? 'success' : 'neutral'">{{ isBound ? '已绑定' : '未绑定' }}</span>
           </div>
-          <p>{{ device.deviceCode }} · 初始名称 {{ device.reportedDeviceName || '--' }} · {{ typeLabel(device.deviceType) }} · {{ device.owner?.username || '暂无所属用户' }}<template v-if="deviceState.version"> · 固件 {{ deviceState.version }}</template></p>
         </div>
         <div class="detail-hero-actions">
           <button class="secondary-btn" type="button" :disabled="commandBusy || !canDeviceControl" @click="handleDeviceControl">{{ getDeviceControlLabel }}</button>
@@ -52,17 +50,17 @@
             </div>
           </div>
           <div class="status-summary">
-            <div><span>运行模式</span><strong>{{ deviceState.runMode }}</strong></div>
+            <div><span>充电器电压</span><strong>{{ formatRealtimeValue(deviceState.chargerVoltage, 'V') }}</strong></div>
+            <div><span>电池电压</span><strong>{{ formatRealtimeValue(deviceState.batteryVoltage, 'V') }}</strong></div>
             <div><span>电量</span><strong>{{ formatRealtimeValue(deviceState.batteryLevel, '%') }}</strong></div>
             <div><span>充电电流</span><strong>{{ formatRealtimeValue(deviceState.chargingCurrent, 'A') }}</strong></div>
-            <div><span>风机状态</span><strong>{{ fanLabel }}</strong></div>
           </div>
         </section>
 
         <section class="panel raw-response-panel">
           <div class="panel-header compact">
             <div><h2>最近设备回执</h2><p>接口返回的原始透传数据</p></div>
-            <button class="secondary-btn response-copy-btn" type="button" :disabled="!rawResponse" @click="copyRawResponse">复制回执</button>
+            <CopyResponseButton class="response-copy-btn" :text="rawResponse" />
           </div>
           <pre>{{ rawResponse || '刷新设备数据后将在这里显示设备回执' }}</pre>
         </section>
@@ -70,11 +68,18 @@
 
       <section class="panel metric-panel">
         <div class="panel-header compact"><div><h2>运行参数</h2><p>数据来自设备状态查询指令 `$#`</p></div></div>
-        <div class="metric-grid">
+        <div class="metric-grid run-metric-grid">
           <div v-for="item in metrics" :key="item.label" class="metric-item">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}<em v-if="item.unit">{{ item.unit }}</em></strong>
           </div>
+        </div>
+      </section>
+      <section class="panel metric-panel device-state-panel">
+        <div class="panel-header compact"><div><h2>设备状态</h2></div></div>
+        <div class="metric-grid device-status-grid">
+          <div class="metric-item"><span>运行模式</span><strong>{{ deviceState.runMode }}</strong></div>
+          <div class="metric-item"><span>风扇</span><strong>{{ fanLabel }}</strong></div>
         </div>
       </section>
     </template>
@@ -90,6 +95,14 @@
                 <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.key === 'feedTimeout' ? 0 : item.min" :max="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 100 : item.max" :step="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 0.01 : item.step">
                 <span>{{ item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? '米' : item.unit }}</span>
                 <button type="button" :disabled="commandBusy || !canOperate" @click="saveParameter(item)">保存</button>
+              </div>
+            </div>
+            <div class="parameter-field">
+              <label for="defog-time">自动除雾时间（{{ formatDefogTime(deviceState.defogTime) }}）</label>
+              <div class="parameter-control">
+                <input id="defog-time" v-model="defogTimeInput" type="time" min="00:01" max="23:59">
+                <button type="button" :disabled="commandBusy || !canOperate" @click="saveDefogTime()">保存</button>
+                <button type="button" :disabled="commandBusy || !canOperate" @click="saveDefogTime(true)">关闭</button>
               </div>
             </div>
             <div class="parameter-field">
@@ -169,10 +182,10 @@ import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
 import { api } from '../services/api.js';
 import { getSelectedDevice } from '../services/deviceNavigation.js';
-import { typeLabel } from '../utils/format.js';
 import { getDeviceStatus, getIdentityStatus } from '../utils/deviceStatus.js';
 import { showToast } from '../utils/toast.js';
-import { createDeviceState, createSlotCommand, extractResponseText, getTimeCommand, parseDeviceResponse } from '../utils/deviceProtocol.js';
+import CopyResponseButton from '../components/CopyResponseButton.vue';
+import { createDeviceState, createSlotCommand, extractResponseText, getTimeCommand, parseDeviceResponse, formatDefogTime, encodeDefogTime } from '../utils/deviceProtocol.js';
 
 const DEFAULT_SLOTS_KEY = 'CKZS_ADMIN_DEVICE_SCHEDULE_DEFAULT';
 const route = useRoute();
@@ -192,6 +205,7 @@ const rawResponse = ref('');
 const customCommand = ref('');
 const customResponse = ref('');
 const editableName = ref('');
+const defogTimeInput = ref('05:00');
 const deviceState = reactive(createDeviceState());
 const parameterForm = reactive({
   nearWaitTime: 0,
@@ -227,7 +241,7 @@ const parameterFields = [
   { key: 'chargingTargetVoltage', label: '充电目标电压', unit: 'V', command: '$d=', step: 0.01, scale: 100 },
   { key: 'chargingCurrentLimit', label: '充电电流预警', unit: 'A', command: '$e=', step: 0.001, scale: 1000 },
   { key: 'startMinimumVoltage', label: '启动最低电压', unit: 'V', command: '$f=', step: 0.01, scale: 100 },
-  { key: 'autoShutdownTime', label: '自动关机时间', unit: 'min', command: '$g=', step: 0.01, scale: 60 },
+  { key: 'autoShutdownTime', label: '自动关机时间', unit: 'min', command: '$g=', step: 1 },
 ];
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
@@ -256,28 +270,21 @@ const metrics = computed(() => [
   deviceState.feedTimeoutDistance !== null
     ? { label: '喂食超时', value: (deviceState.feedTimeoutDistance / 100).toFixed(2), unit: '米' }
     : { label: '喂食超时', value: deviceState.feedTimeout, unit: 's' },
-  { label: '软限位距离', value: deviceState.softLimit > 0 ? deviceState.softLimit / 100 : '关闭', unit: deviceState.softLimit > 0 ? '米' : '' },
-  { label: '送料电机转速', value: deviceState.feedSpeed / 10, unit: '圈/秒' },
+  { label: '软限位距离', value: deviceState.softLimit > 0 ? (deviceState.softLimit / 100).toFixed(2) : '关闭', unit: deviceState.softLimit > 0 ? '米' : '' },
+  { label: '送料电机转速', value: Number.isInteger(deviceState.feedSpeed / 10) ? deviceState.feedSpeed / 10 : (deviceState.feedSpeed / 10).toFixed(1), unit: '圈/秒' },
   { label: '送料电机扭矩', value: deviceState.motorTorque, unit: '%' },
   { label: '移动速度', value: deviceState.moveSpeed, unit: '%' },
   { label: '充电目标电压', value: deviceState.chargingTargetVoltage / 100, unit: 'V' },
   { label: '充电电流预警', value: deviceState.chargingCurrentLimit / 1000, unit: 'A' },
   { label: '启动最低电压', value: deviceState.startMinimumVoltage / 100, unit: 'V' },
-  { label: '自动关机时间', value: Number((deviceState.autoShutdownTime / 60).toFixed(2)), unit: 'min' },
+  { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: 'min' },
+  { label: '自动除雾时间', value: formatDefogTime(deviceState.defogTime) },
 ]);
-const formatRealtimeValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value)}${unit}` : '--';
+const formatRealtimeValue = (value, unit) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Number(value)}${unit}` : '--';
 
-const copyRawResponse = async () => {
-  if (!rawResponse.value) return;
-  try {
-    await navigator.clipboard.writeText(rawResponse.value);
-    showToast('回执内容已复制');
-  } catch {
-    showToast('复制失败，请重试', 'error');
-  }
-};
 
 const applyStateToForm = () => {
+  defogTimeInput.value = deviceState.defogTime > 0 ? formatDefogTime(deviceState.defogTime) : '05:00';
   Object.assign(parameterForm, {
     nearWaitTime: deviceState.nearWaitTime,
     farWaitTime: deviceState.farWaitTime,
@@ -292,7 +299,7 @@ const applyStateToForm = () => {
     chargingTargetVoltage: deviceState.chargingTargetVoltage / 100,
     chargingCurrentLimit: deviceState.chargingCurrentLimit / 1000,
     startMinimumVoltage: deviceState.startMinimumVoltage / 100,
-    autoShutdownTime: deviceState.autoShutdownTime / 60,
+    autoShutdownTime: deviceState.autoShutdownTime,
     runMode: deviceState.runMode === '手动' ? '1' : '0',
   });
 };
@@ -306,8 +313,6 @@ const loadDevice = async () => {
 
     if (!device.value) throw new Error('未找到该设备');
     editableName.value = device.value.remarkName || '';
-    deviceState.abnormalStatus = device.value.abnormalStatus || '--';
-    deviceState.hasAlarm = Boolean(device.value.hasAlarm);
   } catch (error) {
     showToast(error.message, 'error');
   } finally {
@@ -334,11 +339,7 @@ const refreshState = async () => {
   try {
     const result = await sendCommand('$#');
     const parsed = parseDeviceResponse(result, deviceState);
-    const abnormalStatus = deviceState.abnormalStatus;
-    const hasAlarm = deviceState.hasAlarm;
     Object.assign(deviceState, parsed.state);
-    deviceState.abnormalStatus = abnormalStatus;
-    deviceState.hasAlarm = hasAlarm;
     rawResponse.value = parsed.text;
     applyStateToForm();
     showToast('设备数据已更新');
@@ -419,6 +420,22 @@ const confirmMoveSpeed = () => {
   parameterForm.moveSpeed = pendingMoveSpeed.value;
   const field = parameterFields.find((item) => item.key === 'moveSpeed');
   if (field) saveParameter(field, true);
+};
+
+const saveDefogTime = async (close = false) => {
+  if (commandBusy.value || !canOperate.value) return;
+  const value = close ? 0 : encodeDefogTime(defogTimeInput.value);
+  if (value === null) return showToast('请选择有效时间，不能设置 00:00', 'error');
+  commandBusy.value = true;
+  try {
+    await sendCommand(`$j=${value}`);
+    deviceState.defogTime = value;
+    showToast(close ? '自动除雾已关闭' : '自动除雾时间已同步');
+  } catch (error) {
+    showToast(error.message || '自动除雾时间同步失败', 'error');
+  } finally {
+    commandBusy.value = false;
+  }
 };
 
 const saveRunMode = async () => {
@@ -524,23 +541,23 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.device-detail-page { display: grid; gap: 18px; }
+.device-detail-page { display: grid; gap: 12px; }
 .detail-loading { min-height: 420px; }
 .detail-error { padding: 60px; text-align: center; }
 .detail-error p { margin: 0 0 22px; color: var(--muted); }
-.detail-hero { overflow: hidden; padding: 20px 24px 24px; border-radius: 18px; color: #fff; background: linear-gradient(135deg, #172c72 0%, #3157e5 70%, #426af0 100%); box-shadow: 0 16px 36px rgba(32, 62, 158, .2); }
+.detail-hero { overflow: hidden; padding: 12px 20px; border-radius: 14px; color: #fff; background: linear-gradient(135deg, #172c72 0%, #3157e5 70%, #426af0 100%); box-shadow: 0 16px 36px rgba(32, 62, 158, .2); }
 .detail-back { display: inline-flex; align-items: center; gap: 8px; padding: 5px 0; border: 0; color: #dce4ff; background: transparent; font-size: 12px; }
 .detail-back:hover { color: #fff; }
 .detail-back span { font-size: 18px; }
-.detail-hero-main { display: flex; align-items: center; gap: 17px; margin-top: 16px; }
-.detail-device-icon { position: relative; width: 58px; height: 58px; display: grid; flex: 0 0 58px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; color: #fff; background: rgba(255,255,255,.12); }
+.detail-hero-main { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.detail-device-icon { position: relative; width: 42px; height: 42px; display: grid; flex: 0 0 42px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; color: #fff; background: rgba(255,255,255,.12); }
 .detail-device-icon i { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: #b8c0cf; box-shadow: 0 1px 3px rgba(16,25,54,.28); }
 .detail-device-icon i.online { background: var(--success); }
 .detail-device-icon i.abnormal { background: #dc5252; }
-.readonly-device-name { color: var(--muted); font-size: 12px; }
+.readonly-device-name { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
 .detail-identity { min-width: 0; flex: 1; }
 .detail-title-row { display: flex; align-items: center; gap: 9px; }
-.detail-title-row h2 { max-width: 460px; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 24px; white-space: nowrap; }
+.detail-title-row h2 { max-width: 460px; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 21px; white-space: nowrap; }
 .detail-title-row .tag { border: 1px solid rgba(255,255,255,.14); }
 .detail-identity p { margin: 8px 0 0; color: #cbd6ff; font-size: 12px; }
 .detail-hero-actions { display: flex; gap: 10px; }
@@ -549,53 +566,66 @@ onMounted(async () => {
 .detail-hero-actions button:disabled { cursor: not-allowed; opacity: .5; }
 .detail-warning { margin-top: 18px; padding: 11px 14px; border: 1px solid rgba(255,218,158,.25); border-radius: 10px; color: #ffe1ae; background: rgba(255,180,61,.1); font-size: 12px; }
 .detail-tabs { display: flex; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
-.detail-tabs button { min-width: 128px; height: 40px; padding: 0 20px; border: 0; border-radius: 9px; color: #6c7689; background: transparent; font-size: 13px; font-weight: 650; }
+.detail-tabs button { min-width: 110px; height: 34px; padding: 0 20px; border: 0; border-radius: 9px; color: #6c7689; background: transparent; font-size: 13px; font-weight: 650; }
 .detail-tabs button:hover { color: var(--primary); background: #f6f8ff; }
 .detail-tabs button.active { color: #fff; background: var(--primary); box-shadow: 0 7px 16px rgba(49,87,229,.18); }
-.status-layout { display: grid; grid-template-columns: minmax(560px, 1.2fr) minmax(360px, .8fr); gap: 18px; }
-.status-overview { min-height: 292px; display: grid; grid-template-columns: 260px 1fr; align-items: center; padding: 28px; }
-.status-ring { width: 210px; height: 210px; display: grid; place-items: center; border-radius: 50%; transform: rotate(-90deg); }
-.status-ring-core { width: 166px; height: 166px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px #edf0f7; transform: rotate(90deg); }
+.status-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 12px; }
+.status-overview { min-height: 206px; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 14px; align-items: center; padding: 16px; }
+.status-ring { width: 164px; height: 164px; display: grid; place-items: center; border-radius: 50%; transform: rotate(-90deg); }
+.status-ring-core { width: 134px; height: 134px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px #edf0f7; transform: rotate(90deg); }
 .status-ring-core time { margin-bottom: 10px; padding: 4px 10px; border-radius: 999px; color: var(--primary); background: #f1f4ff; font-size: 12px; font-style: normal; font-weight: 650; line-height: 1; }
 .status-ring-core span { color: var(--muted); font-size: 12px; }
-.status-ring-core strong { margin-top: 8px; font-size: 22px; }
+.status-ring-core strong { margin-top: 6px; font-size: 18px; }
 .status-ring-core b { margin-top: 11px; color: var(--primary); font-size: 17px; }
 .status-ring-core em { color: var(--muted); font-size: 12px; font-style: normal; font-weight: 500; }
-.status-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-.status-summary div { min-height: 92px; padding: 18px; border: 1px solid #e8ebf2; border-radius: 13px; background: #fafbfe; }
+.status-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.status-summary div { min-height: 72px; padding: 12px; border: 1px solid #e8ebf2; border-radius: 13px; background: #fafbfe; }
 .status-summary span, .status-summary strong { display: block; }
 .status-summary span { color: var(--muted); font-size: 11px; }
 .status-summary strong { margin-top: 10px; font-size: 16px; }
-.panel-header.compact { min-height: 64px; padding: 15px 20px; }
+.panel-header.compact { min-height: 48px; padding: 10px 16px; }
 .response-copy-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 12px; }
 .response-copy-btn:disabled { cursor: not-allowed; opacity: .5; }
 .raw-response-panel { min-width: 0; }
-.raw-response-panel pre { height: 228px; margin: 0; overflow: auto; padding: 18px 20px; color: #dce4ff; background: #111a31; font: 12px/1.75 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.raw-response-panel pre { height: 158px; margin: 0; overflow: auto; padding: 12px 16px; color: #dce4ff; background: #111a31; font: 12px/1.75 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 .metric-panel { overflow: hidden; }
-.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
-.metric-item { min-height: 112px; padding: 24px; border-right: 1px solid var(--line); }
-.metric-item:nth-child(n + 5) { border-top: 1px solid var(--line); }
-.metric-item:nth-child(4n) { border-right: 0; }
+.metric-grid { display: grid; }
+.run-metric-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: 80px;
+  row-gap: 1px;
+  background: var(--line);
+}
+.run-metric-grid::after { content: ''; background: #fff; }
+.run-metric-grid .metric-item { background: #fff; }
+.metric-item { min-width: 0; padding: 14px 16px; border-right: 1px solid var(--line); }
+.run-metric-grid .metric-item:nth-child(7n) { border-right: 0; }
 .metric-item span, .metric-item strong { display: block; }
 .metric-item span { color: var(--muted); font-size: 12px; }
-.metric-item strong { margin-top: 13px; font-size: 24px; }
+.metric-item strong { margin-top: 8px; font-size: 21px; }
 .metric-item em { margin-left: 5px; color: var(--muted); font-size: 12px; font-style: normal; font-weight: 500; }
-.settings-layout { display: grid; grid-template-columns: minmax(620px, 1.25fr) minmax(340px, .75fr); gap: 18px; align-items: stretch; }
+.device-state-panel { display: flex; align-items: stretch; }
+.device-state-panel .panel-header { border-bottom: 0; border-right: 1px solid var(--line); }
+.device-status-grid { flex: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.device-status-grid .metric-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; }
+.device-status-grid .metric-item strong { margin-top: 0; font-size: 18px; }
+.device-status-grid .metric-item:last-child { border-right: 0; }
+.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 12px; align-items: start; }
 .settings-panel { display: flex; overflow: hidden; flex-direction: column; }
-.parameter-grid { display: grid; flex: 1; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, minmax(72px, 1fr)); gap: 14px 18px; align-items: center; padding: 18px 22px; }
+.parameter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; padding: 16px; }
 .parameter-field { min-width: 0; }
-.parameter-field label { display: block; margin-bottom: 8px; color: #556075; font-size: 12px; font-weight: 650; }
+.parameter-field label { display: block; margin-bottom: 6px; color: #556075; font-size: 12px; font-weight: 650; }
 .parameter-control { min-height: 43px; display: flex; align-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .parameter-control:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .parameter-control input, .parameter-control select { min-width: 0; height: 41px; flex: 1; padding: 0 12px; border: 0; outline: none; color: var(--ink); background: transparent; }
 .parameter-control span { padding: 0 10px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .parameter-control button { height: 31px; margin-right: 5px; padding: 0 11px; border: 0; border-radius: 7px; color: var(--primary); background: var(--primary-soft); font-size: 11px; font-weight: 700; }
 .parameter-control button:disabled { cursor: not-allowed; opacity: .5; }
-.settings-side { display: grid; gap: 14px; }
+.settings-side { display: grid; gap: 12px; }
 .side-card { overflow: hidden; }
-.side-card-body { padding: 16px 20px 18px; }
-.full-button { width: 100%; margin-top: 12px; }
-.custom-command { height: 72px !important; }
+.side-card-body { padding: 12px 16px; }
+.full-button { width: 100%; margin-top: 8px; }
+.custom-command { height: 48px !important; }
 .custom-response { max-height: 140px; margin: 12px 0 0; overflow: auto; padding: 12px; border-radius: 9px; color: #dce4ff; background: #111a31; font: 11px/1.65 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 .danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 20px; border-color: #ffdede; }
 .danger-zone strong { font-size: 13px; }
@@ -611,9 +641,125 @@ onMounted(async () => {
 .schedule-item label > span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 10px; }
 .schedule-item input { width: 100%; height: 38px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; outline: none; background: #fff; }
 .schedule-item input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+@media (max-width: 1600px) {
+  .parameter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 1400px) {
-  .status-layout, .settings-layout { grid-template-columns: 1fr; }
-  .parameter-grid { grid-template-rows: none; }
+  .status-overview { grid-template-columns: 156px minmax(0, 1fr); gap: 8px; padding: 12px; }
+  .status-ring { width: 148px; height: 148px; }
+  .status-ring-core { width: 122px; height: 122px; }
+  .status-ring-core strong { font-size: 16px; }
   .schedule-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 1200px) {
+  .run-metric-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .run-metric-grid::after { grid-column: span 2; }
+  .run-metric-grid .metric-item:nth-child(n) { border-right: 1px solid var(--line); }
+  .run-metric-grid .metric-item:nth-child(5n) { border-right: 0; }
+}
+@media (min-width: 1101px) and (max-height: 800px) {
+  .detail-hero { padding: 8px 16px; }
+  .detail-back { padding: 0; }
+  .detail-hero-main { margin-top: 2px; }
+  .status-overview { min-height: 172px; padding: 10px; grid-template-columns: 142px minmax(0, 1fr); }
+  .status-ring { width: 140px; height: 140px; }
+  .status-ring-core { width: 116px; height: 116px; }
+  .status-summary div { min-height: 60px; padding: 8px; }
+  .raw-response-panel pre { height: 118px; }
+  .panel-header.compact { min-height: 42px; padding: 8px 14px; }
+  .run-metric-grid {
+    grid-auto-rows: 72px;
+  }
+  .metric-item { padding: 10px 14px; }
+  .parameter-grid { gap: 10px; padding: 12px; }
+  .settings-side .panel-header p { display: none; }
+  .side-card-body { padding: 8px 12px; }
+}
+@media (min-width: 1101px) {
+  .device-detail-page { height: 100%; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); }
+  .detail-tab-status { grid-template-rows: auto auto minmax(0, 1.05fr) minmax(0, 1fr) 58px; }
+  .status-layout, .status-overview { min-height: 0; }
+  .status-summary { height: 100%; }
+  .status-summary > div { display: flex; flex-direction: column; justify-content: center; }
+  .raw-response-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .raw-response-panel .panel-header, .metric-panel .panel-header, .settings-panel .panel-header, .side-card .panel-header { flex-shrink: 0; }
+  .raw-response-panel pre { flex: 1; min-height: 0; height: auto; }
+  .metric-panel:not(.device-state-panel) { display: flex; flex-direction: column; min-height: 0; }
+  .run-metric-grid { flex: 1; min-height: 0; grid-template-rows: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; }
+  .run-metric-grid .metric-item { display: flex; flex-direction: column; justify-content: center; }
+  .settings-layout { min-height: 0; align-items: stretch; }
+  .settings-panel { min-height: 0; }
+  .parameter-grid { flex: 1; min-height: 0; grid-template-rows: repeat(4, minmax(0, 1fr)); align-items: center; }
+  .settings-side { min-height: 0; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .side-card { display: flex; flex-direction: column; min-height: 0; }
+  .side-card-body { display: flex; flex-direction: column; flex: 1; min-height: 0; justify-content: center; }
+  .side-card-body > input, .side-card-body > button { flex-shrink: 0; }
+  .custom-command { flex: 1; min-height: 48px; height: auto !important; resize: none; }
+  .schedule-panel { min-height: 0; overflow: auto; }
+}
+@media (min-width: 1101px) and (max-width: 1600px) {
+  .parameter-grid { grid-template-rows: repeat(5, minmax(0, 1fr)); }
+}
+@media (min-width: 1101px) and (max-width: 1200px) {
+  .run-metric-grid { grid-template-rows: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1100px) {
+  .status-layout, .settings-layout { grid-template-columns: 1fr; }
+  .detail-hero-main { flex-wrap: wrap; }
+  .detail-hero-actions { flex-wrap: wrap; }
+}
+@media (max-width: 900px) {
+  .parameter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .run-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .run-metric-grid .metric-item:nth-child(n) { border-right: 1px solid var(--line); }
+  .run-metric-grid .metric-item:nth-child(3n) { border-right: 0; }
+}
+
+/* 参数设置页恢复原来的双列布局与自然滚动。 */
+.detail-tab-parameters { height: auto; grid-template-rows: none; gap: 18px; }
+.detail-tab-parameters .detail-hero { overflow: hidden; padding: 20px 24px 24px; border-radius: 18px; color: #fff; background: linear-gradient(135deg, #172c72 0%, #3157e5 70%, #426af0 100%); box-shadow: 0 16px 36px rgba(32, 62, 158, .2); }
+.detail-tab-parameters .detail-back { display: inline-flex; align-items: center; gap: 8px; padding: 5px 0; border: 0; color: #dce4ff; background: transparent; font-size: 12px; }
+.detail-tab-parameters .detail-back:hover { color: #fff; }
+.detail-tab-parameters .detail-back span { font-size: 18px; }
+.detail-tab-parameters .detail-hero-main { display: flex; align-items: center; gap: 17px; margin-top: 16px; }
+.detail-tab-parameters .detail-device-icon { position: relative; width: 58px; height: 58px; display: grid; flex: 0 0 58px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; color: #fff; background: rgba(255,255,255,.12); }
+.detail-tab-parameters .detail-device-icon i { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: #b8c0cf; box-shadow: 0 1px 3px rgba(16,25,54,.28); }
+.detail-tab-parameters .detail-device-icon i.online { background: var(--success); }
+.detail-tab-parameters .detail-device-icon i.abnormal { background: #dc5252; }
+.detail-tab-parameters .readonly-device-name { color: var(--muted); font-size: 12px; }
+.detail-tab-parameters .detail-title-row h2 { max-width: 460px; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 24px; white-space: nowrap; }
+.detail-tab-parameters .detail-tabs { display: flex; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
+.detail-tab-parameters .detail-tabs button { min-width: 128px; height: 40px; padding: 0 20px; border: 0; border-radius: 9px; color: #6c7689; background: transparent; font-size: 13px; font-weight: 650; }
+.detail-tab-parameters .detail-tabs button:hover { color: var(--primary); background: #f6f8ff; }
+.detail-tab-parameters .detail-tabs button.active { color: #fff; background: var(--primary); box-shadow: 0 7px 16px rgba(49,87,229,.18); }
+.detail-tab-parameters .panel-header.compact { min-height: 64px; padding: 15px 20px; }
+.detail-tab-parameters .settings-layout { display: grid; grid-template-columns: minmax(620px, 1.25fr) minmax(340px, .75fr); gap: 18px; align-items: stretch; }
+.detail-tab-parameters .settings-panel { display: flex; overflow: hidden; flex-direction: column; }
+.detail-tab-parameters .parameter-grid { display: grid; flex: 1; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, minmax(72px, 1fr)); gap: 14px 18px; align-items: center; padding: 18px 22px; }
+.detail-tab-parameters .parameter-field { min-width: 0; }
+.detail-tab-parameters .parameter-field label { display: block; margin-bottom: 8px; color: #556075; font-size: 12px; font-weight: 650; }
+.detail-tab-parameters .parameter-control { min-height: 43px; display: flex; align-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.detail-tab-parameters .parameter-control:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.detail-tab-parameters .parameter-control input, .detail-tab-parameters .parameter-control select { min-width: 0; height: 41px; flex: 1; padding: 0 12px; border: 0; outline: none; color: var(--ink); background: transparent; }
+.detail-tab-parameters .parameter-control span { padding: 0 10px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.detail-tab-parameters .parameter-control button { height: 31px; margin-right: 5px; padding: 0 11px; border: 0; border-radius: 7px; color: var(--primary); background: var(--primary-soft); font-size: 11px; font-weight: 700; }
+.detail-tab-parameters .parameter-control button:disabled { cursor: not-allowed; opacity: .5; }
+.detail-tab-parameters .settings-side { display: grid; gap: 14px; }
+.detail-tab-parameters .side-card { overflow: hidden; }
+.detail-tab-parameters .side-card-body { padding: 16px 20px 18px; }
+.detail-tab-parameters .full-button { width: 100%; margin-top: 12px; }
+.detail-tab-parameters .custom-command { height: 72px !important; }
+.detail-tab-parameters .custom-response { max-height: 140px; margin: 12px 0 0; overflow: auto; padding: 12px; border-radius: 9px; color: #dce4ff; background: #111a31; font: 11px/1.65 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.detail-tab-parameters .danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 20px; border-color: #ffdede; }
+.detail-tab-parameters .danger-zone strong { font-size: 13px; }
+.detail-tab-parameters .danger-zone p { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+.detail-tab-parameters .danger-zone .danger-btn { flex: none; }
+.detail-tab-parameters .settings-side { grid-template-rows: none; }
+.detail-tab-parameters .readonly-device-name { display: inline; margin-top: 0; }
+.detail-tab-parameters .side-card, .detail-tab-parameters .side-card-body { display: block; }
+.detail-tab-parameters .settings-side .panel-header p { display: block; }
+@media (max-width: 1400px) {
+  .detail-tab-parameters .settings-layout { grid-template-columns: 1fr; }
+  .detail-tab-parameters .parameter-grid { grid-template-rows: none; }
 }
 </style>

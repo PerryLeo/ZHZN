@@ -13,7 +13,7 @@
       </div>
     </aside>
 
-    <main class="workspace">
+    <main class="workspace" :class="{ 'detail-workspace': route.name === 'device-detail' }">
       <header class="topbar">
         <div>
           <p class="eyebrow dark">{{ route.meta.eyebrow }}</p>
@@ -61,3 +61,11 @@ const logout = async () => {
   showToast('已安全退出');
 };
 </script>
+
+<style scoped>
+@media (min-width: 1101px) {
+  .detail-workspace:has(.detail-tab-status) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
+  .detail-workspace:has(.detail-tab-status) .topbar { flex: 0 0 86px; }
+  .detail-workspace:has(.detail-tab-status) .page-content { flex: 1; min-height: 0; padding: 20px 24px; }
+}
+</style>

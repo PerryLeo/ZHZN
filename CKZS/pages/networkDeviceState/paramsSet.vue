@@ -105,7 +105,16 @@
                     </view>
                     <view class="setting-item">
                         <text class="label">自动关机时间</text>
-                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime * 60)" /><text class="unit">min</text></view>
+                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /><text class="unit">min</text></view>
+                    </view>
+                    <view class="setting-item">
+                        <text class="label">自动除雾时间</text>
+                        <view class="right-box">
+                            <picker mode="time" :value="defogTime > 0 ? formatDefogTime(defogTime) : '05:00'" start="00:01" end="23:59" @change="handleDefogTimeChange">
+                                <text class="value defog-value">{{ formatDefogTime(defogTime) }}</text>
+                            </picker>
+                            <text class="defog-close" @click="saveDefogTime(0)">关闭</text>
+                        </view>
                     </view>
                 </view>
 
@@ -192,6 +201,7 @@ import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
 import { checkAndOpenAppUpdate, getInstalledApp } from '@/common/appUpdate.js';
+import { formatDefogTime, encodeDefogTime } from '@/common/defogTime.js';
 
 const remarkName = ref('');
 const savedRemarkName = ref('');
@@ -209,6 +219,7 @@ const chargingTargetVoltage = ref('0');
 const chargingCurrentLimit = ref('0');
 const startMinimumVoltage = ref('0');
 const autoShutdownTime = ref('0');
+const defogTime = ref(null);
 const version = ref('');
 const appVersion = ref('');
 const deviceCode = ref('');
@@ -241,7 +252,8 @@ onLoad((options) => {
             chargingTargetVoltage.value = (data.chargingTargetVoltage ?? 0) / 100;
             chargingCurrentLimit.value = (data.chargingCurrentLimit ?? 0) / 1000;
             startMinimumVoltage.value = (data.startMinimumVoltage ?? 0) / 100;
-            autoShutdownTime.value = (data.autoShutdownTime ?? 0) / 60;
+            autoShutdownTime.value = data.autoShutdownTime ?? 0;
+            defogTime.value = data.defogTime ?? null;
             version.value = data.version;
         } catch (error) {
             console.error('Data error:', error);
@@ -308,6 +320,19 @@ const setDeviceData = async (cmd, { showResponse = false } = {}) => {
 const handleDataBlur = (header, value) => {
     if (value === '' || value === null || value === undefined) return;
     setDeviceData(header + value);
+};
+
+const handleDefogTimeChange = (event) => {
+    const value = encodeDefogTime(event.detail.value);
+    if (value === null) {
+        uni.showToast({ title: '请选择有效时间，不能设置 00:00', icon: 'none' });
+        return;
+    }
+    saveDefogTime(value);
+};
+
+const saveDefogTime = async (value) => {
+    if (await setDeviceData(`$j=${value}`)) defogTime.value = value;
 };
 
 const handleFeedTimeoutBlur = () => {
@@ -438,6 +463,7 @@ const confirmDelete = () => {
 </script>
 
 <style lang="scss" scoped>
+.defog-close { margin-left: 24rpx; color: $primary-color; }
 .page-wrapper {
     height: 100vh;
     width: 100vw;
@@ -568,6 +594,10 @@ const confirmDelete = () => {
             font-size: 28rpx;
             color: #999;
             margin-right: 12rpx;
+
+            &.defog-value {
+                color: #666;
+            }
 
             &.highlight {
                 color: $primary-color;

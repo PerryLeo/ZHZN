@@ -54,6 +54,10 @@
                         <text class="health-icon">✓</text>
                         <text>已连接</text>
                     </view>
+                    <view class="health-item" :class="state.hasAlarm ? 'status-abnormal' : (state.abnormalStatus === '无异常' ? 'status-normal' : 'status-muted')">
+                        <text class="health-icon">{{ state.hasAlarm ? '!' : (state.abnormalStatus === '--' ? '−' : '✓') }}</text>
+                        <text>{{ state.abnormalStatus }}</text>
+                    </view>
                 </view>
             </view>
 
@@ -125,16 +129,11 @@
                         <view class="parameter-item"><text class="parameter-label">送料电机转速</text><view class="parameter-value"><text>{{ Number.isInteger(state.feedSpeed / 10) ? state.feedSpeed / 10 : (state.feedSpeed / 10).toFixed(1) }}</text><text class="unit">圈/秒</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">送料电机扭矩</text><view class="parameter-value"><text>{{ state.motorTorque }}</text><text class="unit">%</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">移动速度</text><view class="parameter-value"><text>{{ state.moveSpeed }}</text><text class="unit">%</text></view></view>
-                    </view>
-                </view>
-
-                <view class="parameter-section">
-                    <view class="section-heading"><text class="heading-mark"></text><text>充电保护</text></view>
-                    <view class="parameter-grid">
                         <view class="parameter-item"><text class="parameter-label">充电目标电压</text><view class="parameter-value"><text>{{ state.chargingTargetVoltage / 100 }}</text><text class="unit">V</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">充电电流预警</text><view class="parameter-value"><text>{{ state.chargingCurrentLimit / 1000 }}</text><text class="unit">A</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">启动最低电压</text><view class="parameter-value"><text>{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ Number((Number(state.autoShutdownTime || 0) / 60).toFixed(2)) }}</text><text class="unit">min</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ state.autoShutdownTime }}</text><text class="unit">min</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">自动除雾时间</text><view class="parameter-value"><text>{{ formatDefogTime(state.defogTime) }}</text></view></view>
                     </view>
                 </view>
 
@@ -143,7 +142,6 @@
                     <view class="parameter-grid device-status-grid">
                         <view class="parameter-item"><text class="parameter-label">运行模式</text><view class="parameter-value highlight"><text>{{ state.runMode }}</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">风扇</text><view class="parameter-value" :class="{ 'highlight': state.fanStatus === 'ON' }"><text>{{ state.fanStatus === 'ON' ? '开启' : '关闭' }}</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">撒药</text><view class="parameter-value" :class="{ 'highlight': state.pumpStatus === 'ON' }"><text>{{ state.pumpStatus === 'ON' ? '开启' : '关闭' }}</text></view></view>
                     </view>
                 </view>
             </view>
@@ -157,6 +155,8 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { onLoad, onShow, onHide } from '@dcloudio/uni-app';
 import http from '@/common/request.js';
 import { TOKEN_KEY } from '@/common/config.js';
+import { parseDeviceAlarms } from '@/common/deviceAlarm.js';
+import { formatDefogTime } from '@/common/defogTime.js';
 
 const state = reactive({
     currentTrip: 0,
@@ -175,6 +175,7 @@ const state = reactive({
     chargingCurrentLimit: 0,
     startMinimumVoltage: 0,
     autoShutdownTime: 0,
+    defogTime: null,
     deviceStatus: '',
     fanStatus: '',
     pumpStatus: '',
@@ -184,6 +185,7 @@ const state = reactive({
     chargingCurrent: null,
     chargerVoltage: null,
     batteryVoltage: null,
+    ...parseDeviceAlarms(''),
     controlState: 'unknown',
     controlStateLabel: '未知',
     controlLoading: false,
@@ -444,6 +446,7 @@ const parseLine = (line) => {
     }
 
     if (line.startsWith('<') && line.endsWith('>')) {
+        Object.assign(state, parseDeviceAlarms(''));
         const content = line.slice(1, -1);
         const parts = content.split('|');
         state.deviceStatus = formatDeviceStatus(parts[0]);
@@ -471,6 +474,7 @@ const parseLine = (line) => {
         return;
     }
 
+    Object.assign(state, parseDeviceAlarms(line, state));
     const batteryMatch = line.match(/(?:^|[|\r\n])BatLevel:\s*(-?\d+(?:\.\d+)?)\s*%?/i);
     if (batteryMatch) state.batteryLevel = Number(batteryMatch[1]);
     const chargerVoltageMatch = line.match(/(?:^|[|\r\n])V_Chg:\s*(-?\d+(?:\.\d+)?)\s*V?/i);
@@ -494,7 +498,7 @@ const parseLine = (line) => {
         return;
     }
 
-    const match = line.match(/^\$([0-9ad-gi])=(-?\d+(?:\.\d+)?)/);
+    const match = line.match(/^\$([0-9ad-gij])=(-?\d+(?:\.\d+)?)/);
     if (match) {
         const key = match[1];
         const val = Number(match[2]);
@@ -517,6 +521,7 @@ const parseLine = (line) => {
             case 'e': state.chargingCurrentLimit = val; break;
             case 'f': state.startMinimumVoltage = val; break;
             case 'g': state.autoShutdownTime = val; break;
+            case 'j': state.defogTime = val; break;
         }
     }
 
@@ -1098,7 +1103,8 @@ const handleRefresh = () => {
         border-right: 1rpx solid #E4E8EF;
     }
 
-    &:nth-last-child(-n + 2) {
+    &:last-child,
+    &:nth-last-child(2):nth-child(odd) {
         border-bottom: 0;
     }
 }
@@ -1135,7 +1141,7 @@ const handleRefresh = () => {
 }
 
 .device-status-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 
     .parameter-item {
         padding-left: 12rpx;

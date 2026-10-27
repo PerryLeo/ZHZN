@@ -105,7 +105,16 @@
                     </view>
                     <view class="setting-item">
                         <text class="label">自动关机时间</text>
-                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime * 60)" /><text class="unit">min</text></view>
+                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /><text class="unit">min</text></view>
+                    </view>
+                    <view class="setting-item">
+                        <text class="label">自动除雾时间</text>
+                        <view class="right-box">
+                            <picker mode="time" :value="defogTime > 0 ? formatDefogTime(defogTime) : '05:00'" start="00:01" end="23:59" @change="handleDefogTimeChange">
+                                <text class="value defog-value">{{ formatDefogTime(defogTime) }}</text>
+                            </picker>
+                            <text class="defog-close" @click="saveDefogTime(0)">关闭</text>
+                        </view>
                     </view>
                 </view>
 
@@ -203,6 +212,7 @@ import http from '@/common/request.js';
 import { TOKEN_KEY } from '@/common/config.js';
 import BluetoothOta from '@/components/bluetooth-ota/bluetooth-ota.vue';
 import { checkAndOpenAppUpdate, getInstalledApp } from '@/common/appUpdate.js';
+import { formatDefogTime, encodeDefogTime } from '@/common/defogTime.js';
 
 const otaPanel = ref(null);
 const otaBusy = ref(false);
@@ -224,6 +234,7 @@ const chargingTargetVoltage = ref('0');
 const chargingCurrentLimit = ref('0');
 const startMinimumVoltage = ref('0');
 const autoShutdownTime = ref('0');
+const defogTime = ref(null);
 const version = ref('');
 const appVersion = ref('');
 const deviceMac = ref('');
@@ -258,7 +269,8 @@ onLoad((options) => {
             chargingTargetVoltage.value = (data.chargingTargetVoltage ?? 0) / 100;
             chargingCurrentLimit.value = (data.chargingCurrentLimit ?? 0) / 1000;
             startMinimumVoltage.value = (data.startMinimumVoltage ?? 0) / 100;
-            autoShutdownTime.value = (data.autoShutdownTime ?? 0) / 60;
+            autoShutdownTime.value = data.autoShutdownTime ?? 0;
+            defogTime.value = data.defogTime ?? null;
             version.value = data.version;
             deviceMac.value = data.mac || '';
             deviceCode.value = data.deviceCode || '';
@@ -403,6 +415,20 @@ const handleDataBlur = (header, val) => {
     setDeviceData(header + val + '\n')
 };
 
+const handleDefogTimeChange = (event) => {
+    const value = encodeDefogTime(event.detail.value);
+    if (value === null) {
+        uni.showToast({ title: '请选择有效时间，不能设置 00:00', icon: 'none' });
+        return;
+    }
+    saveDefogTime(value);
+};
+
+const saveDefogTime = (value) => {
+    if (otaBusy.value) return;
+    if (setDeviceData(`$j=${value}\n`)) defogTime.value = value;
+};
+
 const handleFeedTimeoutBlur = () => {
     if (String(feedTimeout.value).trim() === '') {
         uni.showToast({ title: '请输入有效的喂食超时时间', icon: 'none' });
@@ -464,8 +490,8 @@ const copyResponse = () => {
 };
 
 const setDeviceData = (cmd) => {
-    if (!cmd) return;
-    if (otaBusy.value) return;
+    if (!cmd) return false;
+    if (otaBusy.value) return false;
     try {
         const app = getApp();
         const socket = app.globalData?.sppSocket;
@@ -484,11 +510,14 @@ const setDeviceData = (cmd) => {
                     uni.showToast({ title: '同步失败', icon: 'none' });
                 }
             }, 5000);
+            return true;
         } else {
             uni.showToast({ title: '蓝牙未连接', icon: 'none' });
+            return false;
         }
     } catch (e) {
         uni.showToast({ title: '发送失败', icon: 'none' });
+        return false;
     }
 };
 
@@ -552,6 +581,7 @@ const confirmDelete = () => {
 </script>
 
 <style lang="scss" scoped>
+.defog-close { margin-left: 24rpx; color: $primary-color; }
 .page-wrapper {
     height: 100vh;
     width: 100vw;
@@ -682,6 +712,10 @@ const confirmDelete = () => {
             font-size: 28rpx;
             color: #999;
             margin-right: 12rpx;
+
+            &.defog-value {
+                color: #666;
+            }
 
             &.highlight {
                 color: $primary-color;

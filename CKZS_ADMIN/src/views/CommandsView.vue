@@ -29,7 +29,7 @@
         <button class="primary-btn command-submit" type="submit" :disabled="sending">{{ sending ? '指令下发中...' : '确认下发指令' }}</button>
         <div v-if="result" class="command-result-header">
           <span>指令回执</span>
-          <button class="secondary-btn command-result-copy" type="button" @click="copyResult">复制回执</button>
+          <CopyResponseButton class="command-result-copy" :text="result" />
         </div>
         <pre v-if="result" class="command-result">{{ result }}</pre>
       </form>
@@ -46,6 +46,7 @@ import { onMounted, reactive, ref } from 'vue';
 import AppModal from '../components/AppModal.vue';
 import { api } from '../services/api.js';
 import { showToast } from '../utils/toast.js';
+import CopyResponseButton from '../components/CopyResponseButton.vue';
 import { getDeviceStatus } from '../utils/deviceStatus.js';
 
 const loading = ref(true);
@@ -123,15 +124,6 @@ const sendCommand = async () => {
   } finally { sending.value = false; }
 };
 
-const copyResult = async () => {
-  if (!result.value) return;
-  try {
-    await navigator.clipboard.writeText(result.value);
-    showToast('回执内容已复制');
-  } catch {
-    showToast('复制失败，请重试', 'error');
-  }
-};
 
 onMounted(fetchDevices);
 </script>

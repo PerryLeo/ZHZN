@@ -1181,7 +1181,7 @@ const toBoundDevice = (item) => {
 
   const name = item.remarkName || '--';
   uni.navigateTo({
-    url: `/pages/networkDeviceState/index?from=device-list&deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}&remarkName=${encodeURIComponent(item.remarkName || '')}&identityMismatch=${item.identityMismatch ? '1' : '0'}&abnormalStatus=${encodeURIComponent(item.abnormalStatus || '--')}&hasAlarm=${item.hasAlarm ? '1' : '0'}`
+    url: `/pages/networkDeviceState/index?from=device-list&deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}&remarkName=${encodeURIComponent(item.remarkName || '')}&identityMismatch=${item.identityMismatch ? '1' : '0'}`
   });
 };
 </script>
