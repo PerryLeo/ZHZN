@@ -26,7 +26,7 @@
                         <view class="right-box">
                             <input class="item-input" v-model="nearTime" type="number"
                                 @blur="handleDataBlur('$1=', nearTime)" />
-                            <text class="unit">s</text>
+                            <text class="unit">秒</text>
                         </view>
                     </view>
                     <view class="setting-item">
@@ -34,7 +34,7 @@
                         <view class="right-box">
                             <input class="item-input" v-model="remoteTime" type="number"
                                 @blur="handleDataBlur('$2=', remoteTime)" />
-                            <text class="unit">s</text>
+                            <text class="unit">秒</text>
                         </view>
                     </view>
                     <view class="setting-item">
@@ -50,7 +50,7 @@
                         <view class="right-box">
                             <input class="item-input" v-model="feedTimeout" type="number" min="0" :max="feedTimeoutUsesDistance ? 100 : undefined"
                                 :step="feedTimeoutUsesDistance ? 0.01 : 1" @blur="handleFeedTimeoutBlur" />
-                            <text class="unit">{{ feedTimeoutUsesDistance ? '米' : 's' }}</text>
+                            <text class="unit">{{ feedTimeoutUsesDistance ? '米' : '秒' }}</text>
                         </view>
                     </view>
                 </view>
@@ -105,7 +105,7 @@
                     </view>
                     <view class="setting-item">
                         <text class="label">自动关机时间</text>
-                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /><text class="unit">min</text></view>
+                        <view class="right-box"><input class="item-input" v-model="autoShutdownTime" type="number" @blur="handleDataBlur('$g=', autoShutdownTime)" /><text class="unit">分钟</text></view>
                     </view>
                     <view class="setting-item">
                         <text class="label">自动除雾时间</text>

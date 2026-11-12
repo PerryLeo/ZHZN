@@ -114,10 +114,10 @@
                 <view class="parameter-section">
                     <view class="section-heading"><text class="heading-mark"></text><text>运行参数</text></view>
                     <view class="parameter-grid">
-                        <view class="parameter-item"><text class="parameter-label">近端等待时间</text><view class="parameter-value"><text>{{ state.nearWaitTime }}</text><text class="unit">s</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">远端等待时间</text><view class="parameter-value"><text>{{ state.farWaitTime }}</text><text class="unit">s</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">近端等待时间</text><view class="parameter-value"><text>{{ state.nearWaitTime }}</text><text class="unit">秒</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">远端等待时间</text><view class="parameter-value"><text>{{ state.farWaitTime }}</text><text class="unit">秒</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">手动模式趟数</text><view class="parameter-value"><text>{{ state.manualTripsVal }}</text><text class="unit">趟</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">喂食超时</text><view class="parameter-value"><template v-if="state.feedTimeoutDistance !== null"><text>{{ (state.feedTimeoutDistance / 100).toFixed(2) }}</text><text class="unit">米</text></template><template v-else><text>{{ state.feedTimeout }}</text><text class="unit">s</text></template></view></view>
+                        <view class="parameter-item"><text class="parameter-label">喂食超时</text><view class="parameter-value"><template v-if="state.feedTimeoutDistance !== null"><text>{{ (state.feedTimeoutDistance / 100).toFixed(2) }}</text><text class="unit">米</text></template><template v-else><text>{{ state.feedTimeout }}</text><text class="unit">秒</text></template></view></view>
                         <view class="parameter-item">
                             <text class="parameter-label">软限位距离</text>
                             <view class="parameter-value">
@@ -132,7 +132,7 @@
                         <view class="parameter-item"><text class="parameter-label">充电目标电压</text><view class="parameter-value"><text>{{ state.chargingTargetVoltage / 100 }}</text><text class="unit">V</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">充电电流预警</text><view class="parameter-value"><text>{{ state.chargingCurrentLimit / 1000 }}</text><text class="unit">A</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">启动最低电压</text><view class="parameter-value"><text>{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ state.autoShutdownTime }}</text><text class="unit">min</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ state.autoShutdownTime }}</text><text class="unit">分钟</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">自动除雾时间</text><view class="parameter-value"><text>{{ formatDefogTime(state.defogTime) }}</text></view></view>
                     </view>
                 </view>
@@ -264,6 +264,7 @@ const extractResponseText = (payload) => {
 
 const formatDeviceStatus = (status) => {
     const value = String(status || '').trim();
+    if (/^(Return|Returning|Returnning)$/i.test(value)) return '归位中';
     const waitingMatch = value.match(/^Waiting:\s*(\d+)\s*s?$/i);
     if (waitingMatch) return `等待中，剩余${waitingMatch[1]}秒`;
 
@@ -274,7 +275,6 @@ const formatDeviceStatus = (status) => {
         Unreturn: '刚上电，未归位',
         Pause: '暂停',
         Idle: '空闲',
-        Returning: '归位中',
         running: '运行中'
     };
     return statusMap[value] || value || '未知';
@@ -282,12 +282,12 @@ const formatDeviceStatus = (status) => {
 
 const parseControlState = (status) => {
     const value = String(status || '').trim();
-    const matched = value.match(/^(Unreturn|Pause|Waiting|Running|Returning|Return|Idle)(?=$|[\s(:])/i);
+    const matched = value.match(/^(Unreturn|Pause|Waiting|Running|Returning|Returnning|Return|Idle)(?=$|[\s(:])/i);
     const keyword = matched ? matched[1].toLowerCase() : '';
     if (keyword === 'pause') return { state: 'paused', label: '暂停' };
     if (keyword === 'waiting' || keyword === 'running') return { state: 'running', label: keyword === 'waiting' ? '等待中' : '运行中' };
     if (keyword === 'idle' || keyword === 'unreturn') return { state: 'idle', label: '空闲' };
-    if (keyword === 'returning' || keyword === 'return') return { state: 'returning', label: '归位中' };
+    if (keyword === 'returning' || keyword === 'returnning' || keyword === 'return') return { state: 'returning', label: '归位中' };
     return { state: 'unknown', label: '未知' };
 };
 

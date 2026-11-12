@@ -548,7 +548,7 @@ const parseRunState = (rawData) => {
   const raw = String(rawData || '');
   const carMatch = raw.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
   const carState = carMatch ? carMatch[1].trim() : '';
-  const stateMatch = carState.match(/^(Unreturn|Pause|Wait|Waiting|Running|Return|Returning|Idle|A-B|B-A)(?=$|[\s(:])/i);
+  const stateMatch = carState.match(/^(Unreturn|Pause|Wait|Waiting|Running|Return|Returning|Returnning|Idle|A-B|B-A)(?=$|[\s(:])/i);
   const stateKeyword = stateMatch ? stateMatch[1].toLowerCase() : '';
   if (stateKeyword === 'pause') {
     return { runState: 'paused', runStateLabel: '暂停' };
@@ -562,7 +562,7 @@ const parseRunState = (rawData) => {
   if (stateKeyword === 'idle' || stateKeyword === 'unreturn') {
     return { runState: 'idle', runStateLabel: '空闲' };
   }
-  if (stateKeyword === 'return' || stateKeyword === 'returning') {
+  if (stateKeyword === 'return' || stateKeyword === 'returning' || stateKeyword === 'returnning') {
     return { runState: 'returning', runStateLabel: '归位中' };
   }
     return { runState: 'unknown', runStateLabel: '未知' };

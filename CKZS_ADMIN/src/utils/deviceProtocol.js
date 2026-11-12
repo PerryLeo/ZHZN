@@ -48,14 +48,14 @@ export const getCsqSignalLevel = (value) => {
 
 export const parseControlState = (rawState) => {
   const value = String(rawState || '').trim();
-  const matched = value.match(/^(Unreturn|Pause|Wait|Waiting|Running|Return|Returning|Idle|A-B|B-A)(?=$|[\s(:])/i);
+  const matched = value.match(/^(Unreturn|Pause|Wait|Waiting|Running|Return|Returning|Returnning|Idle|A-B|B-A)(?=$|[\s(:])/i);
   const keyword = matched ? matched[1].toLowerCase() : '';
   if (keyword === 'pause') return { controlState: 'paused', controlStateLabel: '暂停' };
   if (keyword === 'wait' || keyword === 'waiting' || keyword === 'running' || keyword === 'a-b' || keyword === 'b-a') {
     return { controlState: 'running', controlStateLabel: keyword === 'wait' || keyword === 'waiting' ? '等待中' : '运行中' };
   }
   if (keyword === 'idle' || keyword === 'unreturn') return { controlState: 'idle', controlStateLabel: '空闲' };
-  if (keyword === 'return' || keyword === 'returning') return { controlState: 'returning', controlStateLabel: '归位中' };
+  if (keyword === 'return' || keyword === 'returning' || keyword === 'returnning') return { controlState: 'returning', controlStateLabel: '归位中' };
   return { controlState: 'unknown', controlStateLabel: '未知' };
 };
 
@@ -95,6 +95,7 @@ export const extractResponseText = (payload) => {
 
 const formatDeviceStatus = (status) => {
   const value = String(status || '').trim();
+  if (/^(Return|Returning|Returnning)$/i.test(value)) return '归位中';
   const waitingMatch = value.match(/^Waiting:\s*(\d+)\s*s?$/i);
   if (waitingMatch) return `等待中，剩余${waitingMatch[1]}秒`;
 

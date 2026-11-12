@@ -241,7 +241,7 @@ const parameterFields = [
   { key: 'chargingTargetVoltage', label: '充电目标电压', unit: 'V', command: '$d=', step: 0.01, scale: 100 },
   { key: 'chargingCurrentLimit', label: '充电电流预警', unit: 'A', command: '$e=', step: 0.001, scale: 1000 },
   { key: 'startMinimumVoltage', label: '启动最低电压', unit: 'V', command: '$f=', step: 0.01, scale: 100 },
-  { key: 'autoShutdownTime', label: '自动关机时间', unit: 'min', command: '$g=', step: 1 },
+  { key: 'autoShutdownTime', label: '自动关机时间', unit: '分钟', command: '$g=', step: 1 },
 ];
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
@@ -264,12 +264,12 @@ const fanLabel = computed(() => deviceState.fanStatus === 'ON' ? '开启' : devi
 const progress = computed(() => deviceState.manualTripsVal > 0 ? Math.min((deviceState.currentTrip / deviceState.manualTripsVal) * 100, 100) : 0);
 const ringStyle = computed(() => ({ background: `conic-gradient(#3157e5 ${progress.value}%, #e9edfa ${progress.value}% 100%)` }));
 const metrics = computed(() => [
-  { label: '近端等待时间', value: deviceState.nearWaitTime, unit: 's' },
-  { label: '远端等待时间', value: deviceState.farWaitTime, unit: 's' },
+  { label: '近端等待时间', value: deviceState.nearWaitTime, unit: '秒' },
+  { label: '远端等待时间', value: deviceState.farWaitTime, unit: '秒' },
   { label: '手动模式趟数', value: deviceState.manualTripsVal, unit: '趟' },
   deviceState.feedTimeoutDistance !== null
     ? { label: '喂食超时', value: (deviceState.feedTimeoutDistance / 100).toFixed(2), unit: '米' }
-    : { label: '喂食超时', value: deviceState.feedTimeout, unit: 's' },
+    : { label: '喂食超时', value: deviceState.feedTimeout, unit: '秒' },
   { label: '软限位距离', value: deviceState.softLimit > 0 ? (deviceState.softLimit / 100).toFixed(2) : '关闭', unit: deviceState.softLimit > 0 ? '米' : '' },
   { label: '送料电机转速', value: Number.isInteger(deviceState.feedSpeed / 10) ? deviceState.feedSpeed / 10 : (deviceState.feedSpeed / 10).toFixed(1), unit: '圈/秒' },
   { label: '送料电机扭矩', value: deviceState.motorTorque, unit: '%' },
@@ -277,7 +277,7 @@ const metrics = computed(() => [
   { label: '充电目标电压', value: deviceState.chargingTargetVoltage / 100, unit: 'V' },
   { label: '充电电流预警', value: deviceState.chargingCurrentLimit / 1000, unit: 'A' },
   { label: '启动最低电压', value: deviceState.startMinimumVoltage / 100, unit: 'V' },
-  { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: 'min' },
+  { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: '分钟' },
   { label: '自动除雾时间', value: formatDefogTime(deviceState.defogTime) },
 ]);
 const formatRealtimeValue = (value, unit) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Number(value)}${unit}` : '--';
