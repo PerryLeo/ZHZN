@@ -90,20 +90,22 @@
           <div class="panel-header compact"><div><h2>运行参数设置</h2><p>修改后点击对应参数的保存按钮，指令将直接下发到当前设备</p></div></div>
           <div class="parameter-grid">
             <div v-for="item in parameterFields" :key="item.key" class="parameter-field">
-              <label :for="`parameter-${item.key}`">{{ item.label }}</label>
-              <div class="parameter-control">
-                <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.key === 'feedTimeout' ? 0 : item.min" :max="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 100 : item.max" :step="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 0.01 : item.step">
-                <span>{{ item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? '米' : item.unit }}</span>
-                <button type="button" :disabled="commandBusy || !canOperate" @click="saveParameter(item)">保存</button>
-              </div>
-            </div>
-            <div class="parameter-field">
-              <label for="defog-time">自动除雾时间（{{ formatDefogTime(deviceState.defogTime) }}）</label>
-              <div class="parameter-control">
-                <input id="defog-time" v-model="defogTimeInput" type="time" min="00:01" max="23:59">
-                <button type="button" :disabled="commandBusy || !canOperate" @click="saveDefogTime()">保存</button>
-                <button type="button" :disabled="commandBusy || !canOperate" @click="saveDefogTime(true)">关闭</button>
-              </div>
+              <template v-if="item.key === 'defogTime'">
+                <label for="defog-time">自动除雾时间（{{ formatDefogTime(deviceState.defogTime) }}）</label>
+                <div class="parameter-control">
+                  <input id="defog-time" v-model="defogTimeInput" type="time" min="00:01" max="23:59">
+                  <button type="button" :disabled="commandBusy || !canOperate" @click="saveDefogTime()">保存</button>
+                  <button type="button" :disabled="commandBusy || !canOperate" @click="saveDefogTime(true)">关闭</button>
+                </div>
+              </template>
+              <template v-else>
+                <label :for="`parameter-${item.key}`">{{ item.label }}</label>
+                <div class="parameter-control">
+                  <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.key === 'feedTimeout' ? 0 : item.min" :max="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 100 : item.max" :step="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 0.01 : item.step">
+                  <span>{{ item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? '米' : item.unit }}</span>
+                  <button type="button" :disabled="commandBusy || !canOperate" @click="saveParameter(item)">保存</button>
+                </div>
+              </template>
             </div>
             <div class="parameter-field">
               <label for="run-mode">运行模式</label>
@@ -220,6 +222,7 @@ const parameterForm = reactive({
   chargingCurrentLimit: 0,
   startMinimumVoltage: 0,
   autoShutdownTime: 0,
+  translationWaitTime: '',
   runMode: '0',
 });
 
@@ -242,6 +245,8 @@ const parameterFields = [
   { key: 'chargingCurrentLimit', label: '充电电流预警', unit: 'A', command: '$e=', step: 0.001, scale: 1000 },
   { key: 'startMinimumVoltage', label: '启动最低电压', unit: 'V', command: '$f=', step: 0.01, scale: 100 },
   { key: 'autoShutdownTime', label: '自动关机时间', unit: '分钟', command: '$g=', step: 1 },
+  { key: 'defogTime', label: '自动除雾时间' },
+  { key: 'translationWaitTime', label: '平移等待时间', unit: '秒', command: '$k=', min: 0, step: 1 },
 ];
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
@@ -260,7 +265,7 @@ const getDeviceControlLabel = computed(() => {
   if (deviceState.controlState === 'idle') return '开始运行';
   return '不可操作';
 });
-const fanLabel = computed(() => deviceState.fanStatus === 'ON' ? '开启' : deviceState.fanStatus === 'OFF' ? '关闭' : '--');
+const fanLabel = computed(() => deviceState.fanStatus === 'ON' ? '开启' : deviceState.fanStatus === 'OFF' ? '关闭' : '未知');
 const progress = computed(() => deviceState.manualTripsVal > 0 ? Math.min((deviceState.currentTrip / deviceState.manualTripsVal) * 100, 100) : 0);
 const ringStyle = computed(() => ({ background: `conic-gradient(#3157e5 ${progress.value}%, #e9edfa ${progress.value}% 100%)` }));
 const metrics = computed(() => [
@@ -279,8 +284,9 @@ const metrics = computed(() => [
   { label: '启动最低电压', value: deviceState.startMinimumVoltage / 100, unit: 'V' },
   { label: '自动关机时间', value: deviceState.autoShutdownTime, unit: '分钟' },
   { label: '自动除雾时间', value: formatDefogTime(deviceState.defogTime) },
+  { label: '平移等待时间', value: deviceState.translationWaitTime ?? 0, unit: '秒' },
 ]);
-const formatRealtimeValue = (value, unit) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Number(value)}${unit}` : '--';
+const formatRealtimeValue = (value, unit) => `${Number.isFinite(Number(value)) ? Number(value) : 0}${unit}`;
 
 
 const applyStateToForm = () => {
@@ -300,6 +306,7 @@ const applyStateToForm = () => {
     chargingCurrentLimit: deviceState.chargingCurrentLimit / 1000,
     startMinimumVoltage: deviceState.startMinimumVoltage / 100,
     autoShutdownTime: deviceState.autoShutdownTime,
+    translationWaitTime: deviceState.translationWaitTime ?? '',
     runMode: deviceState.runMode === '手动' ? '1' : '0',
   });
 };
@@ -383,6 +390,13 @@ const handleDeviceControl = async () => {
 };
 
 const saveParameter = async (field, confirmedOutOfRange = false) => {
+  if (field.key === 'translationWaitTime' && (
+    String(parameterForm[field.key]).trim() === '' ||
+    !Number.isSafeInteger(Number(parameterForm[field.key])) ||
+    Number(parameterForm[field.key]) < 0
+  )) {
+    return showToast('平移等待时间需为非负整数秒', 'error');
+  }
   if (field.key === 'feedTimeout' && String(parameterForm[field.key] ?? '').trim() === '') {
     return showToast('请输入有效的喂食超时时间', 'error');
   }

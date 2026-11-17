@@ -16,11 +16,12 @@ export const createDeviceState = () => ({
   startMinimumVoltage: 0,
   autoShutdownTime: 0,
   defogTime: null,
+  translationWaitTime: null,
   deviceStatus: '等待设备响应',
   fanStatus: '',
   pumpStatus: '',
   version: '',
-  deviceTime: '--:--:--',
+  deviceTime: '00:00:00',
   batteryLevel: null,
   chargingCurrent: null,
   chargerVoltage: null,
@@ -158,8 +159,9 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
     f: 'startMinimumVoltage',
     g: 'autoShutdownTime',
     j: 'defogTime',
+    k: 'translationWaitTime',
   };
-  const valuePattern = /\$([0-9ad-gij])=(-?\d+(?:\.\d+)?)/g;
+  const valuePattern = /\$([0-9ad-gijk])=(-?\d+(?:\.\d+)?)/g;
   let valueMatch = null;
   while ((valueMatch = valuePattern.exec(text)) !== null) {
     const key = valueMatch[1];
