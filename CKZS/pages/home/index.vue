@@ -76,13 +76,13 @@
           <view class="group-dropdown-mask" v-if="groupDropdownVisible" @click="groupDropdownVisible = false"></view>
           <text class="loading-text" v-if="boundLoading">加载中...</text>
           <view class="batch-row" v-if="!boundLoading && filteredBoundDevices.length > 0">
-            <view class="batch-btn" :class="{ disabled: batchCommandLoading || isBoundStatusChecking }" @click="turnAllOn">
+            <view class="batch-btn" :class="{ disabled: batchCommandLoading }" @click="turnAllOn">
               <text class="batch-btn-text">{{ batchCommandLoading ? '执行中...' : '全部开始' }}</text>
             </view>
-            <view class="batch-btn batch-btn-off" :class="{ disabled: batchCommandLoading || isBoundStatusChecking }" @click="turnAllOff">
+            <view class="batch-btn batch-btn-off" :class="{ disabled: batchCommandLoading }" @click="turnAllOff">
               <text class="batch-btn-text">{{ batchCommandLoading ? '执行中...' : '全部暂停' }}</text>
             </view>
-            <view class="batch-btn batch-btn-translate" :class="{ disabled: batchCommandLoading || isBoundStatusChecking }" @click="translateAll">
+            <view class="batch-btn batch-btn-translate" :class="{ disabled: batchCommandLoading }" @click="translateAll">
               <text class="batch-btn-text">{{ batchCommandLoading ? '执行中...' : '全部平移' }}</text>
             </view>
           </view>
@@ -93,6 +93,7 @@
               v-for="item in filteredBoundDevices"
               :key="item.id"
               @click="toBoundDevice(item)"
+              @longpress.stop="showDeviceActions(item)"
             >
               <view class="bound-head">
                 <view class="bound-icon" :class="{ online: item.online === 1, checking: item.statusLoading }">
@@ -143,18 +144,6 @@
                   <text class="metric-label">充电电流</text>
                   <text :class="['metric-value', getMetricValueClass(item.current, 'current')]">{{ formatMetric(item.current, 'A') }}</text>
                 </view>
-              </view>
-              <view class="mode-row">
-                <text class="mode-label">身份状态</text>
-                <text
-                  class="mode-value"
-                  :class="{
-                    abnormal: item.online === 1 && item.identityMismatch,
-                    normal: !item.statusLoading && item.online === 1 && !item.identityMismatch
-                  }"
-                >
-                  {{ item.statusLoading ? '--' : (item.online !== 1 ? '--' : (item.identityMismatch ? '身份异常' : '身份正常')) }}
-                </text>
               </view>
               <view class="mode-row">
                 <text class="mode-label">异常状态</text>
@@ -261,6 +250,25 @@
         <view class="modal-footer">
           <button class="btn btn-cancel" @click="closeEditModal">取消</button>
           <button class="btn btn-confirm" @click="confirmEdit">确定</button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 设备操作与解绑确认，沿用参数页运行模式弹窗样式 -->
+    <view class="custom-modal-mask device-action-mask" :class="{ show: deviceActionsVisible || unbindDialogVisible }" @click="closeDeviceActions">
+      <view class="custom-modal device-action-modal" :class="{ 'slide-up': deviceActionsVisible || unbindDialogVisible }" @click.stop>
+        <view class="modal-header">
+          <text class="modal-title">{{ unbindDialogVisible ? '确认解绑' : '设备操作' }}</text>
+        </view>
+        <view class="modal-body device-action-body">
+          <text class="device-action-name">{{ selectedUnbindDevice?.remarkName || selectedUnbindDevice?.deviceCode || '' }}</text>
+          <text v-if="unbindDialogVisible" class="device-action-description">确定要解绑此设备吗？</text>
+        </view>
+        <view class="device-action-list">
+          <button class="device-action-option" :disabled="unbindingDevice" @click="unbindDialogVisible ? unbindSelectedDevice() : confirmUnbindDevice()">{{ unbindingDevice ? '解绑中...' : unbindDialogVisible ? '确认解绑' : '解绑' }}</button>
+        </view>
+        <view class="modal-footer">
+          <button class="btn-cancel" :disabled="unbindingDevice" @click="closeDeviceActions">取消</button>
         </view>
       </view>
     </view>
@@ -611,11 +619,10 @@ const fetchBoundDeviceStatuses = async (devices) => {
   currentDevices.forEach(device => {
     device.statusLoading = true;
     device.statusError = '';
-    device.identityMismatch = false;
     device.csq = null;
     device.csqSignalLevel = 0;
     device.tripProgress = '--';
-    if (['异常', '身份异常', '设备身份异常'].includes(device.abnormalStatus)) {
+    if (device.abnormalStatus === '异常') {
       device.abnormalStatus = '--';
       device.hasAlarm = false;
     }
@@ -631,7 +638,6 @@ const fetchBoundDeviceStatuses = async (devices) => {
 
       currentDevices.forEach(device => {
         const status = statusMap.get(device.deviceCode);
-        device.identityMismatch = Boolean(status?.identityMismatch);
         if (!status?.success) {
           device.online = 0;
           device.statusError = status?.error || '设备状态获取失败';
@@ -763,7 +769,6 @@ const fetchBoundDevices = async ({ throwOnError = false, refreshSummaryAfterStat
       csqSignalLevel: 0,
       abnormalStatus: '--',
       hasAlarm: false,
-      identityMismatch: false,
       statusLoading: true,
       statusError: '',
       rawStatusData: '',
@@ -1127,36 +1132,30 @@ const fetchAllSelectedBoundDeviceCodes = async () => {
 
 const sendBatchDeviceCommand = async (command, actionLabel) => {
   if (batchCommandLoading.value) return;
-  if (isBoundStatusChecking.value) {
-    uni.showToast({ title: '正在检测设备状态，请稍后操作', icon: 'none' });
-    return;
-  }
 
   batchCommandLoading.value = true;
   uni.showLoading({ title: `正在全部${actionLabel}...`, mask: true });
+  let message;
   try {
     const deviceCodes = await fetchAllSelectedBoundDeviceCodes();
-    if (deviceCodes.length === 0) {
-      uni.showToast({ title: '暂无可操作设备', icon: 'none' });
-      return;
-    }
-    await http.post('/api/devices/batchCommand', {
+    if (deviceCodes.length === 0) throw new Error('暂无可操作设备');
+    const result = await http.post('/api/devices/batchCommand', {
       deviceCodes,
       type: 'send',
       // 批量透传按协议原样下发，不附加换行符。
       params: { data: command }
     });
-    uni.hideLoading();
-    uni.showToast({ title: '下发成功', icon: 'success' });
+    const summary = [`已提交 ${result.total} 台`];
+    if (result.failedCount) summary.push(`失败 ${result.failedCount} 台`);
+    if (result.upgradingCount) summary.push(`升级中跳过 ${result.upgradingCount} 台`);
+    message = summary.join('，');
   } catch (error) {
-    uni.showToast({
-      title: typeof error === 'string' ? error : `全部${actionLabel}失败`,
-      icon: 'none'
-    });
+    message = typeof error === 'string' ? error : error?.message || `全部${actionLabel}失败`;
   } finally {
     batchCommandLoading.value = false;
     uni.hideLoading();
   }
+  uni.showToast({ title: message, icon: 'none' });
 };
 
 const turnAllOn = () => sendBatchDeviceCommand('$h=1\n', '开始');
@@ -1165,7 +1164,62 @@ const turnAllOff = () => sendBatchDeviceCommand('$h=0\n', '暂停');
 
 const translateAll = () => sendBatchDeviceCommand('$r', '平移');
 
+const unbindDialogVisible = ref(false);
+const deviceActionsVisible = ref(false);
+const unbindingDevice = ref(false);
+const selectedUnbindDevice = ref(null);
+let suppressCardClickUntil = 0;
+
+const closeDeviceActions = () => {
+  if (unbindingDevice.value) return;
+  deviceActionsVisible.value = false;
+  unbindDialogVisible.value = false;
+  selectedUnbindDevice.value = null;
+  suppressCardClickUntil = Date.now() + 800;
+};
+
+const showDeviceActions = (item) => {
+  suppressCardClickUntil = Date.now() + 800;
+  if (deviceActionsVisible.value || unbindDialogVisible.value || unbindingDevice.value) return;
+  if (!item?.deviceCode) {
+    uni.showToast({ title: '设备编号缺失', icon: 'none' });
+    return;
+  }
+  selectedUnbindDevice.value = item;
+  deviceActionsVisible.value = true;
+};
+
+const confirmUnbindDevice = () => {
+  deviceActionsVisible.value = false;
+  unbindDialogVisible.value = true;
+};
+
+const unbindSelectedDevice = async () => {
+  if (unbindingDevice.value || !selectedUnbindDevice.value?.deviceCode) return;
+  const deviceCode = selectedUnbindDevice.value.deviceCode;
+  unbindingDevice.value = true;
+  try {
+    await http.post('/api/users/unbindDevice', { deviceCode });
+  } catch (error) {
+    unbindingDevice.value = false;
+    uni.showToast({ title: typeof error === 'string' ? error : '解绑失败', icon: 'none' });
+    return;
+  }
+  boundDevices.value = boundDevices.value.filter(device => device.deviceCode !== deviceCode);
+  boundPage.value = 1;
+  const results = await Promise.allSettled([
+    fetchBoundDevices({ throwOnError: true }),
+    fetchDeviceSummary(true),
+    fetchDeviceGroups(true)
+  ]);
+  unbindingDevice.value = false;
+  closeDeviceActions();
+  const refreshFailed = results.some(result => result.status === 'rejected');
+  uni.showToast({ title: refreshFailed ? '已解绑，请刷新列表' : '已解绑', icon: refreshFailed ? 'none' : 'success' });
+};
+
 const toBoundDevice = (item) => {
+  if (deviceActionsVisible.value || unbindDialogVisible.value || unbindingDevice.value || Date.now() < suppressCardClickUntil) return;
   if (item?.statusLoading) {
     uni.showToast({ title: '正在检测设备状态，请稍后进入', icon: 'none' });
     return;
@@ -1181,7 +1235,7 @@ const toBoundDevice = (item) => {
 
   const name = item.remarkName || '--';
   uni.navigateTo({
-    url: `/pages/networkDeviceState/index?from=device-list&deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}&remarkName=${encodeURIComponent(item.remarkName || '')}&identityMismatch=${item.identityMismatch ? '1' : '0'}`
+    url: `/pages/networkDeviceState/index?from=device-list&deviceCode=${encodeURIComponent(item.deviceCode)}&name=${encodeURIComponent(name)}&remarkName=${encodeURIComponent(item.remarkName || '')}`
   });
 };
 </script>
@@ -1952,9 +2006,6 @@ const toBoundDevice = (item) => {
     color: #FF4D4F;
   }
 
-  &.normal {
-    color: #159570;
-  }
 }
 
 /* ===== 蓝牙设备卡片 ===== */
@@ -2482,6 +2533,82 @@ const toBoundDevice = (item) => {
   transition: all 0.2s;
 
   &:focus-within { border-color: rgba($primary-color, 0.4); background: #FFFFFF; box-shadow: 0 0 0 6rpx rgba($primary-color, 0.08); }
+}
+
+.device-action-mask { backdrop-filter: blur(10rpx); }
+
+.device-action-modal {
+  width: 520rpx;
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+
+  .modal-header {
+    border-bottom: 2rpx solid #F2F2F2;
+  }
+
+  .modal-title { font-size: 34rpx; }
+
+  .modal-body { padding-bottom: 0; }
+
+  .modal-footer {
+    display: block;
+    border-top: none;
+    padding: 30rpx 40rpx;
+
+    .btn-cancel {
+      height: 88rpx;
+      background: #F5F6FA;
+      color: #5E6166;
+      border: none;
+      border-radius: 44rpx;
+      font-size: 30rpx;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      &::after { border: none; }
+      &:active { background: #EEF0F5; }
+    }
+  }
+}
+
+.device-action-list { padding: 20rpx 40rpx 40rpx; }
+
+.device-action-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 34rpx 40rpx;
+  margin-bottom: 20rpx;
+  background: #FCE8E6;
+  border: 2rpx solid transparent;
+  border-radius: 24rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: normal;
+  color: #C44740;
+  transition: all 0.2s;
+  &::after { border: none; }
+  &:active { transform: scale(0.98); background: #F8D9D6; }
+}
+
+.device-action-body {
+  text-align: center;
+}
+
+.device-action-name {
+  display: block;
+  font-size: 30rpx;
+  color: #2D3139;
+  word-break: break-all;
+}
+
+.device-action-description {
+  display: block;
+  margin-top: 20rpx;
+  font-size: 28rpx;
+  color: #5E6166;
 }
 
 .modern-input { font-size: 30rpx; color: #333; width: 100%; }

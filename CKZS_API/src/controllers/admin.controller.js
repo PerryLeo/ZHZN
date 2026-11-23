@@ -12,12 +12,11 @@ const getPagination = (query) => {
 export const AdminController = {
   async dashboard(req, res) {
     try {
-      const [userTotal, deviceTotal, boundTotal, onlineTotal, identityAbnormalTotal, recentDevices, typeGroups] = await Promise.all([
+      const [userTotal, deviceTotal, boundTotal, onlineTotal, recentDevices, typeGroups] = await Promise.all([
         User.count(),
         Device.count(),
         Device.count({ where: { status: 1 } }),
-        Device.count({ where: { online: 1, identityAbnormal: 0 } }),
-        Device.count({ where: { identityAbnormal: 1 } }),
+        Device.count({ where: { online: 1 } }),
         Device.findAll({
           limit: 6,
           order: [['updatedAt', 'DESC']],
@@ -40,8 +39,7 @@ export const AdminController = {
           bound: boundTotal,
           unbound: Math.max(deviceTotal - boundTotal, 0),
           online: onlineTotal,
-          identityAbnormal: identityAbnormalTotal,
-          offline: Math.max(deviceTotal - onlineTotal - identityAbnormalTotal, 0),
+          offline: Math.max(deviceTotal - onlineTotal, 0),
         },
         deviceTypes: typeGroups.map(item => ({
           type: item.deviceType || 'unknown',
@@ -142,9 +140,6 @@ export const AdminController = {
       }
       if (req.query.online !== undefined && req.query.online !== '') {
         where.online = Number(req.query.online) === 1 ? 1 : 0;
-      }
-      if (req.query.identityAbnormal !== undefined && req.query.identityAbnormal !== '') {
-        where.identityAbnormal = Number(req.query.identityAbnormal) === 1 ? 1 : 0;
       }
       if (req.query.deviceType) where.deviceType = req.query.deviceType;
       if (req.query.userId) where.userId = Number(req.query.userId);

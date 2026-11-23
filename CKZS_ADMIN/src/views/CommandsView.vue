@@ -72,9 +72,7 @@ const refreshDeviceStatuses = async (list) => {
       const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
       batch.forEach(device => {
         const status = statusMap.get(device.deviceCode);
-        device.online = status?.success || status?.identityMismatch ? 1 : 0;
-        device.identityMismatch = Boolean(status?.identityMismatch);
-        device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
+        device.online = status?.success ? 1 : 0;
         device.onlineChecking = false;
       });
     } catch {

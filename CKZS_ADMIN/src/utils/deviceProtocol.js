@@ -4,8 +4,6 @@ export const createDeviceState = () => ({
   farWaitTime: 0,
   manualTripsVal: 0,
   runMode: '未知',
-  feedTimeout: 0,
-  feedTimeoutDistance: null,
   feedTime: 0,
   softLimit: 0,
   feedSpeed: 0,
@@ -63,6 +61,7 @@ export const parseControlState = (rawState) => {
 export const parseDeviceStatusReport = (payload) => {
   const text = extractResponseText(payload);
   const carMatch = text.match(/(?:^|[|\r\n])\s*Car\s*:\s*([^|\r\n]+)/i);
+  const nameMatch = text.match(/(?:^|[|\r\n])\s*Name\s*:([^|\r\n]*)/i);
   const tripMatch = text.match(/(?:^|[|\r\n])\s*Trip\s*:\s*([^|\r\n]+)/i);
   const batteryAlarm = getStatusMetric(text, ['BatAlarm']);
   const fanAlarm = getStatusMetric(text, ['FanAlarm']);
@@ -75,6 +74,7 @@ export const parseDeviceStatusReport = (payload) => {
     batteryLevel: getStatusMetric(text, ['BatLevel']),
     chargingCurrent: getStatusMetric(text, ['I_Chg']),
     signalStrength: getStatusMetric(text, ['CSQ']),
+    reportedDeviceName: nameMatch ? nameMatch[1].trim() : '',
     tripProgress: tripMatch ? tripMatch[1].trim() : null,
     ...(carMatch ? parseControlState(carMatch[1]) : {}),
     abnormalStatus: batteryAlarm === null || fanAlarm === null ? '--' : (alarms.length ? alarms.join('；') : '无异常'),
@@ -147,8 +147,6 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
     1: 'nearWaitTime',
     2: 'farWaitTime',
     3: 'manualTripsVal',
-    5: 'feedTimeout',
-    i: 'feedTimeoutDistance',
     6: 'feedTime',
     7: 'softLimit',
     8: 'feedSpeed',
@@ -161,7 +159,7 @@ export const parseDeviceResponse = (payload, currentState = createDeviceState())
     j: 'defogTime',
     k: 'translationWaitTime',
   };
-  const valuePattern = /\$([0-9ad-gijk])=(-?\d+(?:\.\d+)?)/g;
+  const valuePattern = /\$([0-46-9ad-gjk])=(-?\d+(?:\.\d+)?)/g;
   let valueMatch = null;
   while ((valueMatch = valuePattern.exec(text)) !== null) {
     const key = valueMatch[1];

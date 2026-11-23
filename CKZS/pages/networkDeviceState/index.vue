@@ -50,10 +50,6 @@
                 </view>
                 <view class="status-divider"></view>
                 <view class="status-health">
-                    <view class="health-item" :class="state.identityMismatch ? 'status-abnormal' : 'status-normal'">
-                        <text class="health-icon">{{ state.identityMismatch ? '!' : '✓' }}</text>
-                        <text>{{ state.identityMismatch ? '身份异常' : '身份正常' }}</text>
-                    </view>
                     <view class="health-item" :class="state.hasAlarm ? 'status-abnormal' : (state.abnormalStatus === '无异常' ? 'status-normal' : 'status-muted')">
                         <text class="health-icon">{{ state.hasAlarm ? '!' : (state.abnormalStatus === '--' ? '−' : '✓') }}</text>
                         <text>{{ state.abnormalStatus }}</text>
@@ -117,7 +113,6 @@
                         <view class="parameter-item"><text class="parameter-label">近端等待时间</text><view class="parameter-value"><text>{{ state.nearWaitTime }}</text><text class="unit">秒</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">远端等待时间</text><view class="parameter-value"><text>{{ state.farWaitTime }}</text><text class="unit">秒</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">手动模式趟数</text><view class="parameter-value"><text>{{ state.manualTripsVal }}</text><text class="unit">趟</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">喂食超时</text><view class="parameter-value"><template v-if="state.feedTimeoutDistance !== null"><text>{{ (state.feedTimeoutDistance / 100).toFixed(2) }}</text><text class="unit">米</text></template><template v-else><text>{{ state.feedTimeout }}</text><text class="unit">秒</text></template></view></view>
                         <view class="parameter-item">
                             <text class="parameter-label">软限位距离</text>
                             <view class="parameter-value">
@@ -134,6 +129,7 @@
                         <view class="parameter-item"><text class="parameter-label">启动最低电压</text><view class="parameter-value"><text>{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ state.autoShutdownTime }}</text><text class="unit">分钟</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">自动除雾时间</text><view class="parameter-value"><text>{{ formatDefogTime(state.defogTime) }}</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">平移等待时间</text><view class="parameter-value"><text>{{ state.translationWaitTime }}</text><text class="unit">秒</text></view></view>
                     </view>
                 </view>
 
@@ -163,8 +159,6 @@ const state = reactive({
     farWaitTime: 0,
     manualTripsVal: 0,
     runMode: '未知',
-    feedTimeout: 0,
-    feedTimeoutDistance: null,
     feedTime: 0,
     softLimit: 0,
     feedSpeed: 0,
@@ -175,6 +169,7 @@ const state = reactive({
     startMinimumVoltage: 0,
     autoShutdownTime: 0,
     defogTime: null,
+    translationWaitTime: 0,
     deviceStatus: '',
     fanStatus: '',
     pumpStatus: '',
@@ -188,7 +183,6 @@ const state = reactive({
     controlStateLabel: '未知',
     controlLoading: false,
     translateLoading: false,
-    identityMismatch: false,
     abnormalStatus: '--',
     hasAlarm: false,
     deviceCode: '',
@@ -216,7 +210,6 @@ onLoad((options) => {
     if (options.name) pageTitle.value = decodeURIComponent(options.name);
     if (options.deviceCode) state.deviceCode = decodeURIComponent(options.deviceCode);
     if (options.remarkName) state.remarkName = decodeURIComponent(options.remarkName);
-    state.identityMismatch = options.identityMismatch === '1' || options.identityMismatch === 'true';
 });
 
 onShow(() => {
@@ -326,7 +319,7 @@ const parseDeviceResponse = (payload) => {
     if (versionMatch) state.version = versionMatch[1].trim();
 
     const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
-    const valuePattern = /\$([0-9ad-gij])=(-?\d+(?:\.\d+)?)/g;
+    const valuePattern = /\$([0-46-9ad-gjk])=(-?\d+(?:\.\d+)?)/g;
     let valueMatch = null;
     while ((valueMatch = valuePattern.exec(text)) !== null) {
         const key = valueMatch[1];
@@ -336,8 +329,6 @@ const parseDeviceResponse = (payload) => {
             case '2': state.farWaitTime = value; break;
             case '3': state.manualTripsVal = value; break;
             case '4': state.runMode = modeMap[value] || '未知'; break;
-            case '5': state.feedTimeout = value; break;
-            case 'i': state.feedTimeoutDistance = value; break;
             case '6': state.feedTime = value; break;
             case '7': state.softLimit = value; break;
             case '8': state.feedSpeed = value; break;
@@ -348,6 +339,7 @@ const parseDeviceResponse = (payload) => {
             case 'f': state.startMinimumVoltage = value; break;
             case 'g': state.autoShutdownTime = value; break;
             case 'j': state.defogTime = value; break;
+            case 'k': state.translationWaitTime = value; break;
         }
     }
 
@@ -727,10 +719,6 @@ const handleRefresh = () => refreshDeviceState({ syncClock: false, showLoading: 
     font-weight: 600;
     line-height: 1.4;
     overflow-wrap: anywhere;
-
-    & + .health-item {
-        border-left: 1rpx solid #EEF0F4;
-    }
 
     .health-icon {
         width: 32rpx;

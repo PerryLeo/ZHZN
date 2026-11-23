@@ -50,19 +50,10 @@ export const syncDB = async () => {
       comment: '用户备注名称（可修改）',
     });
   }
-  if (!deviceColumns.identityAbnormal) {
-    await queryInterface.addColumn('devices', 'identityAbnormal', {
-      type: DataTypes.TINYINT,
-      allowNull: false,
-      defaultValue: 0,
-      comment: '设备身份状态: 0-正常 1-回包 IMEI 与设备编码不一致',
-    });
-  }
   const deviceIndexes = await queryInterface.showIndex('devices');
-  if (!deviceIndexes.some(index => index.name === 'uniq_devices_initial_name')) {
-    await queryInterface.addIndex('devices', ['deviceName'], {
-      unique: true,
-      name: 'uniq_devices_initial_name',
+  if (deviceIndexes.some(index => index.name === 'uniq_devices_initial_name')) {
+    await queryInterface.removeIndex('devices', 'uniq_devices_initial_name').catch(error => {
+      if (error.original?.code !== 'ER_CANT_DROP_FIELD_OR_KEY') throw error;
     });
   }
   console.log('✅ 数据库表已同步');

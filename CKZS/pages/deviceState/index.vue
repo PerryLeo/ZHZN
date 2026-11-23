@@ -117,7 +117,6 @@
                         <view class="parameter-item"><text class="parameter-label">近端等待时间</text><view class="parameter-value"><text>{{ state.nearWaitTime }}</text><text class="unit">秒</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">远端等待时间</text><view class="parameter-value"><text>{{ state.farWaitTime }}</text><text class="unit">秒</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">手动模式趟数</text><view class="parameter-value"><text>{{ state.manualTripsVal }}</text><text class="unit">趟</text></view></view>
-                        <view class="parameter-item"><text class="parameter-label">喂食超时</text><view class="parameter-value"><template v-if="state.feedTimeoutDistance !== null"><text>{{ (state.feedTimeoutDistance / 100).toFixed(2) }}</text><text class="unit">米</text></template><template v-else><text>{{ state.feedTimeout }}</text><text class="unit">秒</text></template></view></view>
                         <view class="parameter-item">
                             <text class="parameter-label">软限位距离</text>
                             <view class="parameter-value">
@@ -134,6 +133,7 @@
                         <view class="parameter-item"><text class="parameter-label">启动最低电压</text><view class="parameter-value"><text>{{ state.startMinimumVoltage / 100 }}</text><text class="unit">V</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">自动关机时间</text><view class="parameter-value"><text>{{ state.autoShutdownTime }}</text><text class="unit">分钟</text></view></view>
                         <view class="parameter-item"><text class="parameter-label">自动除雾时间</text><view class="parameter-value"><text>{{ formatDefogTime(state.defogTime) }}</text></view></view>
+                        <view class="parameter-item"><text class="parameter-label">平移等待时间</text><view class="parameter-value"><text>{{ state.translationWaitTime }}</text><text class="unit">秒</text></view></view>
                     </view>
                 </view>
 
@@ -164,8 +164,6 @@ const state = reactive({
     farWaitTime: 0,
     manualTripsVal: 0,
     runMode: '未知',
-    feedTimeout: 0,
-    feedTimeoutDistance: null,
     feedTime: 0,
     softLimit: 0,
     feedSpeed: 0,
@@ -176,6 +174,7 @@ const state = reactive({
     startMinimumVoltage: 0,
     autoShutdownTime: 0,
     defogTime: null,
+    translationWaitTime: 0,
     deviceStatus: '',
     fanStatus: '',
     pumpStatus: '',
@@ -306,7 +305,7 @@ const sendInitCommand = () => {
     }
 };
 
-const bindDeviceByIdentity = async () => {
+const bindDevice = async () => {
     if (!/^\d+$/.test(state.deviceCode) || !state.initialName || bindingDeviceCode === state.deviceCode) return;
     if (!uni.getStorageSync(TOKEN_KEY)) return;
     bindingDeviceCode = state.deviceCode;
@@ -341,17 +340,12 @@ const bindDeviceByIdentity = async () => {
             deviceName: state.initialName,
             error,
         });
-        const message = typeof error === 'string' ? error : '设备绑定失败';
-        if (message.includes('设备身份校验失败')) {
-            uni.showModal({
-                title: '设备身份校验失败',
-                content: message.replace(/^HTTP \d+:\s*/, '').replace(/^设备身份校验失败[：:]\s*/, ''),
-                showCancel: false,
-                confirmText: '确定',
-            });
-        } else {
-            uni.showToast({ title: message, icon: 'none', duration: 2000 });
-        }
+        const message = (typeof error === 'string' ? error : error?.message || '').replace(/^HTTP \d+:\s*/, '');
+        uni.showToast({
+            title: message && !message.startsWith('设备身份校验失败') ? message : '设备绑定失败',
+            icon: 'none',
+            duration: 2000,
+        });
     }
 };
 
@@ -489,16 +483,14 @@ const parseLine = (line) => {
         const imei = imeiMatch[1].trim();
         if (!/^\d+$/.test(imei)) {
             state.deviceCode = '';
-            console.info('[设备身份] 未获取到有效 IMEI，跳过绑定，蓝牙功能可继续使用', { line });
             return;
         }
         state.deviceCode = imei;
-        console.info('[设备身份] 收到 DTU_IMEI', { deviceCode: state.deviceCode, line });
-        bindDeviceByIdentity();
+        bindDevice();
         return;
     }
 
-    const match = line.match(/^\$([0-9ad-gij])=(-?\d+(?:\.\d+)?)/);
+    const match = line.match(/^\$([0-46-9ad-gjk])=(-?\d+(?:\.\d+)?)/);
     if (match) {
         const key = match[1];
         const val = Number(match[2]);
@@ -510,8 +502,6 @@ const parseLine = (line) => {
                 const modeMap = { 0: '自动', 1: '手动', 2: '撒药' };
                 state.runMode = modeMap[val] || '未知';
                 break;
-            case '5': state.feedTimeout = val; break;
-            case 'i': state.feedTimeoutDistance = val; break;
             case '6': state.feedTime = val; break;
             case '7': state.softLimit = val; break;
             case '8': state.feedSpeed = val; break;
@@ -522,6 +512,7 @@ const parseLine = (line) => {
             case 'f': state.startMinimumVoltage = val; break;
             case 'g': state.autoShutdownTime = val; break;
             case 'j': state.defogTime = val; break;
+            case 'k': state.translationWaitTime = val; break;
         }
     }
 

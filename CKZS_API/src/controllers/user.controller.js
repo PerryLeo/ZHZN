@@ -98,36 +98,20 @@ export const UserController = {
     let transaction = null;
     try {
       const deviceCode = String(req.body.deviceCode || '').trim();
-      // deviceName 是硬件返回的不可修改设备名称；initialName 仅兼容旧版 App。
+      // initialName 兼容旧版 App。
       const deviceName = String(req.body.deviceName || req.body.initialName || '').trim();
       if (!deviceCode) return fail(res, '缺少必填参数: deviceCode');
       if (!/^\d+$/.test(deviceCode)) return fail(res, '未获取到有效 IMEI，无法绑定设备');
       if (!deviceName) return fail(res, '缺少必填参数: deviceName');
-      if (deviceCode.length > 100 || deviceName.length > 100) return fail(res, '设备身份信息长度不能超过 100 个字符');
+      if (deviceCode.length > 100 || deviceName.length > 100) return fail(res, '设备编码和名称长度不能超过 100 个字符');
 
       transaction = await sequelize.transaction();
-      const deviceByCode = await Device.findOne({
+      let device = await Device.findOne({
         where: { deviceCode },
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
-      const deviceByName = await Device.findOne({
-        where: { deviceName },
-        transaction,
-        lock: transaction.LOCK.UPDATE,
-      });
-      let device = deviceByCode || deviceByName;
 
-      if (
-        (deviceByCode && deviceByCode.deviceName !== deviceName) ||
-        (deviceByName && deviceByName.deviceCode !== deviceCode) ||
-        (deviceByCode && deviceByName && deviceByCode.id !== deviceByName.id)
-      ) {
-        await transaction.rollback();
-        return fail(res, '设备身份校验失败：IMEI 与设备名称不匹配，设备可能已更换4G模块', 409);
-      }
-
-      // 设备不存在则用不可变的硬件名称与 IMEI 创建唯一身份对。
       if (!device) {
         try {
           device = await Device.create({
@@ -139,29 +123,16 @@ export const UserController = {
             online: 0,
           }, { transaction });
         } catch (error) {
-          // 两个请求同时首次绑定相同 IMEI 或设备名称时，唯一索引会让后一个创建失败；
-          // 回滚后重新按完整身份对加锁读取，再继续后续归属校验。
+          // 并发登记同一编码时，重新读取记录后继续检查账号归属。
           if (error.name !== 'SequelizeUniqueConstraintError') throw error;
           await transaction.rollback();
           transaction = await sequelize.transaction();
-          const retryDeviceByCode = await Device.findOne({
+          device = await Device.findOne({
             where: { deviceCode },
             transaction,
             lock: transaction.LOCK.UPDATE,
           });
-          const retryDeviceByName = await Device.findOne({
-            where: { deviceName },
-            transaction,
-            lock: transaction.LOCK.UPDATE,
-          });
-          device = retryDeviceByCode || retryDeviceByName;
-          if (!device ||
-            (retryDeviceByCode && retryDeviceByCode.deviceName !== deviceName) ||
-            (retryDeviceByName && retryDeviceByName.deviceCode !== deviceCode) ||
-            (retryDeviceByCode && retryDeviceByName && retryDeviceByCode.id !== retryDeviceByName.id)) {
-            await transaction.rollback();
-            return fail(res, '设备身份校验失败：IMEI 与设备名称不匹配，设备可能已更换4G模块', 409);
-          }
+          if (!device) throw error;
         }
       }
 

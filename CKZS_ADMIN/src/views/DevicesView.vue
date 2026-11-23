@@ -1,5 +1,5 @@
 <template>
-  <div class="toolbar">
+  <div class="toolbar device-toolbar">
     <div class="filter-group">
       <div class="search-box">
         <span class="search-icon" aria-hidden="true">
@@ -10,11 +10,9 @@
         </span>
         <input v-model.trim="query.keyword" placeholder="搜索设备名称或编码" @keyup.enter="search">
       </div>
-      <select v-model="selectedGroupId" class="filter-select group-filter" @change="selectGroup">
-        <option value="">全部设备分组</option>
-        <option v-for="group in deviceGroups" :key="group.id" :value="group.id">{{ group.name }}（{{ group.deviceCount }}）</option>
-      </select>
-      <select v-model="query.status" class="filter-select"><option value="">全部设备状态</option><option value="online">在线</option><option value="offline">离线</option><option value="identity-abnormal">身份异常</option></select>
+      <AppSearchSelect v-model="selectedGroupId" class="group-filter" label="设备分组" empty-label="全部设备分组" :options="groupOptions" @change="search" />
+      <AppSearchSelect v-model="query.userId" class="owner-filter" label="所属用户" empty-label="全部用户" search-placeholder="搜索用户账号" :options="ownerOptions" @change="search" />
+      <AppSearchSelect v-model="query.status" label="设备状态" empty-label="全部设备状态" :options="statusOptions" />
       <button class="secondary-btn" type="button" @click="search">查询</button>
       <span v-if="onlineStatusChecking" class="online-checking-hint"><i></i>正在检测当前页设备在线状态...</span>
     </div>
@@ -26,10 +24,10 @@
 
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>身份状态</th><th>运行状态</th><th>完成度</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>运行状态</th><th>完成度</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody>
-        <tr v-if="loading"><td colspan="14" class="empty-state">数据加载中...</td></tr>
-        <tr v-else-if="!pageData.list.length"><td colspan="14" class="empty-state">暂无符合条件的设备</td></tr>
+        <tr v-if="loading"><td colspan="13" class="empty-state">数据加载中...</td></tr>
+        <tr v-else-if="!pageData.list.length"><td colspan="13" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
           <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': !item.onlineChecking, 'device-row-disabled': item.onlineChecking }" @click="openDetail(item)">
             <td>
@@ -40,14 +38,14 @@
                     <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4" />
                     <path d="M10 10h4v4h-4z" />
                   </svg>
-                  <i :class="{ online: getDeviceStatus(item).isOnline, abnormal: getDeviceStatus(item).key === 'identity-abnormal', checking: item.onlineChecking }"></i>
+                  <i :class="{ online: getDeviceStatus(item).isOnline, checking: item.onlineChecking }"></i>
                 </span>
                 <div><strong>{{ item.remarkName || '--' }}</strong><span>{{ item.deviceCode }}</span></div>
               </div>
             </td>
             <td>{{ item.reportedDeviceName || '--' }}</td>
             <td>{{ item.owner?.username || '--' }}</td>
-            <td><span class="tag" :class="getOnlineStatus(item).tone">{{ getOnlineStatus(item).label }}</span></td>
+            <td><span class="tag" :class="getDeviceStatus(item).tone">{{ getDeviceStatus(item).label }}</span></td>
             <td>
               <span class="csq-signal" :class="`level-${getCsqSignalLevel(item.signalStrength)}`" :title="formatSignalTitle(item.signalStrength)">
                 <i :class="{ active: getCsqSignalLevel(item.signalStrength) >= 1 }"></i>
@@ -55,7 +53,6 @@
                 <i :class="{ active: getCsqSignalLevel(item.signalStrength) >= 3 }"></i>
               </span>
             </td>
-            <td><span class="tag" :class="getIdentityStatus(item).tone">{{ getIdentityStatus(item).label }}</span></td>
             <td><span :class="['device-run-state', item.controlState]">{{ item.onlineChecking ? '检测中' : item.controlStateLabel || '未知' }}</span></td>
             <td><span class="device-trip-progress">{{ item.onlineChecking ? '检测中' : item.tripProgress || '--' }}</span></td>
             <td><button class="text-btn device-control-btn" type="button" :disabled="!canControlDevice(item)" @click.stop="handleDeviceAction(item)">{{ getDeviceActionLabel(item) }}</button></td>
@@ -68,19 +65,30 @@
         </template>
       </tbody>
     </table>
-    <AppPagination :page="pageData.page" :total="pageData.total" :total-pages="pageData.totalPages" @change="changePage" />
+    <AppPagination
+      :page="pageData.page"
+      :total="pageData.total"
+      :total-pages="pageData.totalPages"
+      :page-size="pageData.pageSize"
+      :page-sizes="pageSizes"
+      :disabled="loading"
+      numbered
+      jumpable
+      @change="changePage"
+      @page-size-change="changePageSize"
+    />
   </div>
 
   <AppModal v-model="deviceModal.visible" :title="deviceModal.editing ? '编辑设备' : '登记设备'" :loading="submitting" @confirm="saveDevice">
     <div class="form-field"><label>设备编码</label><input v-model.trim="deviceForm.deviceCode" class="form-control" :disabled="Boolean(deviceModal.editing)" placeholder="请输入设备唯一编码" required></div>
     <div class="form-field"><label>设备初始名称</label><input v-model.trim="deviceForm.deviceName" class="form-control" :disabled="Boolean(deviceModal.editing)" placeholder="请输入硬件设备名称" required></div>
     <div v-if="deviceModal.editing" class="form-field"><label>备注名称</label><input v-model.trim="deviceForm.remarkName" class="form-control" placeholder="请输入备注名称"></div>
-    <div class="form-field"><label>设备类型</label><select v-model="deviceForm.deviceType" class="form-control"><option v-for="type in deviceTypes" :key="type" :value="type">{{ typeLabel(type) }}</option></select></div>
+    <div class="form-field"><label for="device-type">设备类型</label><AppSearchSelect id="device-type" v-model="deviceForm.deviceType" label="设备类型" :options="deviceTypeOptions" full-width /></div>
   </AppModal>
 
   <AppModal v-model="bindModal.visible" title="分配设备" confirm-text="确认分配" :loading="submitting" @confirm="bindDevice">
     <p class="confirm-copy">为设备 <strong>{{ bindModal.device?.remarkName || '--' }}</strong> 选择平台所属用户，APP 与 PC 端将同步显示。</p>
-    <div class="form-field bind-user-field"><label>目标用户</label><select v-model.number="bindUserId" class="form-control"><option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}（{{ user.deviceCount }} 台设备）</option></select></div>
+    <div class="form-field bind-user-field"><label for="bind-user">目标用户</label><AppSearchSelect id="bind-user" v-model="bindUserId" label="目标用户" search-placeholder="搜索用户账号" :options="bindUserOptions" full-width /></div>
   </AppModal>
 
   <AppModal v-model="unbindModal.visible" title="解绑设备" confirm-text="确认操作" danger :loading="submitting" @confirm="unbindDevice">
@@ -107,7 +115,7 @@
         <input v-model="selectedGroupDeviceIds" type="checkbox" :value="device.id">
         <span class="device-thumb device-asset-thumb" aria-hidden="true">
           <AppIcon name="device" :size="19" />
-          <i :class="{ online: getDeviceStatus(device).isOnline, abnormal: getDeviceStatus(device).key === 'identity-abnormal' }"></i>
+          <i :class="{ online: getDeviceStatus(device).isOnline }"></i>
         </span>
         <span class="group-device-copy">
           <strong>{{ device.remarkName || '--' }}</strong>
@@ -120,23 +128,30 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
+import AppSearchSelect from '../components/AppSearchSelect.vue';
 import { api } from '../services/api.js';
 import { setSelectedDevice } from '../services/deviceNavigation.js';
 import { formatTime, typeLabel } from '../utils/format.js';
-import { getDeviceStatus, getIdentityStatus, getOnlineStatus } from '../utils/deviceStatus.js';
+import { getDeviceStatus } from '../utils/deviceStatus.js';
 import { getCsqSignalLevel, parseDeviceStatusReport } from '../utils/deviceProtocol.js';
 import { showToast } from '../utils/toast.js';
 
-const deviceTypes = ['dtu', 'sensor', 'gateway', 'camera', 'controller'];
+const deviceTypeOptions = ['dtu', 'sensor', 'gateway', 'camera', 'controller'].map(type => ({ value: type, label: typeLabel(type) }));
+const statusOptions = [
+  { value: 'online', label: '在线' },
+  { value: 'offline', label: '离线' },
+];
 const loading = ref(false);
 const submitting = ref(false);
 const onlineStatusChecking = ref(false);
-const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '' });
+const pageSizes = [10, 20, 50];
+const statusQueryLimit = 10;
+const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', userId: '' });
 const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPages: 0 });
 const deviceModal = reactive({ visible: false, editing: null });
 const bindModal = reactive({ visible: false, device: null });
@@ -144,54 +159,73 @@ const unbindModal = reactive({ visible: false, device: null });
 const deleteModal = reactive({ visible: false, device: null });
 const deviceForm = reactive({ deviceCode: '', deviceName: '', remarkName: '', deviceType: 'dtu' });
 const users = ref([]);
+const ownerOptions = computed(() => users.value.map(user => ({ value: user.id, label: user.username })));
+const bindUserOptions = computed(() => users.value.map(user => ({
+  value: Number(user.id),
+  label: `${user.username}（${user.deviceCount} 台设备）`,
+})));
 const bindUserId = ref(null);
 const deviceGroups = ref([]);
+const groupOptions = computed(() => deviceGroups.value.map(group => ({
+  value: group.id,
+  label: `${group.name}（${group.deviceCount}）`,
+})));
 const selectedGroupId = ref('');
 const boundDevices = ref([]);
 const selectedGroupDeviceIds = ref([]);
 const groupModal = reactive({ visible: false, name: '', loadingDevices: false, submitting: false });
 const router = useRouter();
-let onlineStatusRequestId = 0;
+let listRequestId = 0;
 
-const refreshCurrentPageOnlineStatus = async (devices) => {
-  const currentDevices = Array.isArray(devices) ? devices : [];
-  if (!currentDevices.length) return;
-  currentDevices.forEach(device => {
-    device.signalStrength = null;
-    device.reportedDeviceName = '';
-  });
-  const requestId = ++onlineStatusRequestId;
-  onlineStatusChecking.value = true;
+const refreshDeviceStatusBatch = async (devices) => {
   try {
     const result = await api.post('/api/devices/batchQueryStatus', {
-      deviceCodes: currentDevices.map(device => device.deviceCode),
+      deviceCodes: devices.map(device => device.deviceCode),
       timeout: 5000,
     });
     const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
-    currentDevices.forEach(device => {
+    devices.forEach(device => {
       const status = statusMap.get(device.deviceCode);
-      device.online = status?.success || status?.identityMismatch ? 1 : 0;
-      device.identityMismatch = Boolean(status?.identityMismatch);
-      device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
+      device.online = status?.success ? 1 : 0;
       if (status?.success) {
-        device.reportedDeviceName = status.identity?.name || '';
         Object.assign(device, parseDeviceStatusReport(status));
       }
-      else device.signalStrength = null;
-      device.onlineChecking = false;
     });
-  } catch (error) {
-    currentDevices.forEach(device => {
-      device.signalStrength = null;
-      device.onlineChecking = false;
-    });
-    throw error;
   } finally {
-    if (requestId === onlineStatusRequestId) onlineStatusChecking.value = false;
+    devices.forEach(device => { device.onlineChecking = false; });
   }
 };
+
+const refreshCurrentPageOnlineStatus = async (devices, requestId) => {
+  if (!devices.length) return;
+  devices.forEach(device => {
+    device.signalStrength = null;
+    device.reportedDeviceName = '';
+    device.onlineChecking = true;
+  });
+  onlineStatusChecking.value = true;
+  let firstError;
+  try {
+    for (let index = 0; index < devices.length && requestId === listRequestId; index += statusQueryLimit) {
+      try {
+        await refreshDeviceStatusBatch(devices.slice(index, index + statusQueryLimit));
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError && requestId === listRequestId) {
+      showToast(firstError.message || '设备在线状态检测失败', 'error');
+    }
+  } finally {
+    if (requestId === listRequestId) onlineStatusChecking.value = false;
+  }
+};
+
 const load = async () => {
+  const requestId = ++listRequestId;
   loading.value = true;
+  onlineStatusChecking.value = false;
+  pageData.list.forEach(device => { device.onlineChecking = false; });
   try {
     const params = {
       ...query,
@@ -200,29 +234,27 @@ const load = async () => {
     delete params.status;
     if (query.status === 'online') {
       params.online = 1;
-      params.identityAbnormal = 0;
     } else if (query.status === 'offline') {
       params.online = 0;
-      params.identityAbnormal = 0;
-    } else if (query.status === 'identity-abnormal') {
-      params.identityAbnormal = 1;
     }
-    Object.assign(pageData, await api.get('/api/admin/devices', params));
-
-    const currentDevices = [...pageData.list];
-    currentDevices.forEach(device => {
-      device.onlineChecking = true;
-    });
-    refreshCurrentPageOnlineStatus(currentDevices).catch(error => {
-      showToast(error.message || '设备在线状态检测失败', 'error');
-    });
+    const result = await api.get('/api/admin/devices', params);
+    if (requestId !== listRequestId) return;
+    const lastPage = Math.max(result.totalPages, 1);
+    if (params.page > lastPage) {
+      query.page = lastPage;
+      return load();
+    }
+    Object.assign(pageData, result);
+    void refreshCurrentPageOnlineStatus([...pageData.list], requestId);
+  } catch (error) {
+    if (requestId === listRequestId) showToast(error.message, 'error');
+  } finally {
+    if (requestId === listRequestId) loading.value = false;
   }
-  catch (error) { showToast(error.message, 'error'); }
-  finally { loading.value = false; }
 };
 const search = () => { query.page = 1; load(); };
-const selectGroup = () => { query.page = 1; load(); };
 const changePage = (page) => { query.page = page; load(); };
+const changePageSize = (size) => { query.pageSize = size; search(); };
 const openDetail = (device) => {
   if (device?.onlineChecking) {
     showToast('正在检测设备状态，请稍后进入', 'info');
@@ -354,7 +386,7 @@ const openBind = async (device) => {
   try {
     users.value = await fetchAllUsers();
     if (!users.value.length) return showToast('暂无可分配的平台用户', 'error');
-    bindModal.device = device; bindUserId.value = users.value[0].id; bindModal.visible = true;
+    bindModal.device = device; bindUserId.value = bindUserOptions.value[0].value; bindModal.visible = true;
   } catch (error) { showToast(error.message, 'error'); }
 };
 const bindDevice = async () => {
@@ -390,5 +422,16 @@ const deleteDevice = async () => {
   }
 };
 
-onMounted(() => Promise.all([load(), loadDeviceGroups()]));
+onMounted(() => Promise.all([
+  load(),
+  loadDeviceGroups(),
+  fetchAllUsers()
+    .then(list => { users.value = list; })
+    .catch(error => showToast(error.message || '用户列表加载失败', 'error')),
+]));
 </script>
+
+<style scoped>
+.device-toolbar, .device-toolbar .filter-group { flex-wrap: wrap; }
+.owner-filter { max-width: 200px; }
+</style>

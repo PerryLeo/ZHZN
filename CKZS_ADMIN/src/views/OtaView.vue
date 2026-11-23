@@ -31,12 +31,7 @@
           <div class="form-field">
             <label for="ota-firmware">固件文件</label>
             <div class="firmware-select-control">
-              <select id="ota-firmware" v-model="firmwareFile" class="form-control" :disabled="loadingFirmwares || deletingFirmware" @change="clearPreview">
-                <option value="">请选择固件</option>
-                <option v-for="firmware in firmwares" :key="firmware.firmwareFile" :value="firmware.firmwareFile">
-                  {{ firmware.firmwareVersion || '未识别版本' }} · {{ firmware.firmwareFile }}
-                </option>
-              </select>
+              <AppSearchSelect id="ota-firmware" v-model="firmwareFile" class="firmware-select" label="固件文件" empty-label="请选择固件" search-placeholder="搜索固件" :options="firmwareOptions" :disabled="loadingFirmwares || deletingFirmware" full-width @change="clearPreview" />
               <button class="danger-btn" type="button" :disabled="!selectedFirmware || loadingFirmwares || uploadingFirmware || deletingFirmware || previewing || creatingBatch" @click="confirmDeleteFirmware">删除固件</button>
             </div>
           </div>
@@ -59,7 +54,10 @@
           </div>
 
           <div v-if="scope === 'user'" class="target-picker">
-            <div class="form-field"><label for="ota-user">目标用户</label><select id="ota-user" v-model="targetUserId" class="form-control" @change="loadUserDevices"><option value="">请选择用户</option><option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}（{{ user.role === 'admin' ? '管理员' : 'APP用户' }} · {{ user.deviceCount }} 台）</option></select></div>
+            <div class="form-field">
+              <label for="ota-user">目标用户</label>
+              <AppSearchSelect id="ota-user" v-model="targetUserId" label="目标用户" empty-label="请选择用户" search-placeholder="搜索用户账号" :options="userOptions" full-width @change="loadUserDevices" />
+            </div>
             <div v-if="targetUserId" class="target-list-wrap">
               <div class="target-list-heading"><strong>该用户的绑定设备</strong><span>已选 {{ selectedUserDeviceCodes.length }} / {{ userDevices.length }} 台</span></div>
               <div v-if="loadingUserDevices" class="empty-state">正在读取用户设备...</div>
@@ -112,7 +110,7 @@
     <template v-else>
       <div class="toolbar ota-toolbar">
         <div class="filter-group">
-          <select v-model="historyStatus" class="filter-select" @change="loadBatches(1)"><option value="">全部状态</option><option value="queued">排队中</option><option value="running">升级中</option><option value="paused">已暂停</option><option value="success">全部成功</option><option value="partial">部分完成</option><option value="failed">全部失败</option><option value="skipped">全部跳过</option></select>
+          <AppSearchSelect v-model="historyStatus" label="升级状态" empty-label="全部状态" :options="historyStatusOptions" @change="loadBatches(1)" />
           <button class="secondary-btn" type="button" @click="loadBatches(batchPage)">刷新</button>
         </div>
         <button class="primary-btn" type="button" @click="section = 'create'">+ 发起更新</button>
@@ -194,6 +192,7 @@
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
+import AppSearchSelect from '../components/AppSearchSelect.vue';
 import { api } from '../services/api.js';
 import { formatTime } from '../utils/format.js';
 import { showToast } from '../utils/toast.js';
@@ -202,6 +201,15 @@ const scopes = [
   { key: 'all', title: '全部设备', description: '全部已绑定设备，按在线状态筛选' },
   { key: 'user', title: '指定用户', description: '选择任一账号并勾选其绑定设备' },
   { key: 'device', title: '单个设备', description: '搜索设备后单独发起更新' },
+];
+const historyStatusOptions = [
+  { value: 'queued', label: '排队中' },
+  { value: 'running', label: '升级中' },
+  { value: 'paused', label: '已暂停' },
+  { value: 'success', label: '全部成功' },
+  { value: 'partial', label: '部分完成' },
+  { value: 'failed', label: '全部失败' },
+  { value: 'skipped', label: '全部跳过' },
 ];
 const section = ref('create');
 const scope = ref('all');
@@ -243,6 +251,14 @@ let pollTimer = null;
 let polling = false;
 
 const selectedFirmware = computed(() => firmwares.value.find(item => item.firmwareFile === firmwareFile.value) || null);
+const firmwareOptions = computed(() => firmwares.value.map(firmware => ({
+  value: firmware.firmwareFile,
+  label: `${firmware.firmwareVersion || '未识别版本'} · ${firmware.firmwareFile}`,
+})));
+const userOptions = computed(() => users.value.map(user => ({
+  value: user.id,
+  label: `${user.username}（${user.role === 'admin' ? '管理员' : 'APP用户'} · ${user.deviceCount} 台）`,
+})));
 const canPreview = computed(() => {
   if (scope.value === 'user') return Boolean(targetUserId.value) && selectedUserDeviceCodes.value.length > 0;
   if (scope.value === 'device') return Boolean(deviceCode.value);
@@ -510,7 +526,7 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 .ota-panel-body .form-field { max-width: 640px; }
 .ota-panel-body .form-control { width: 100%; }
 .firmware-select-control { display: flex; align-items: center; gap: 12px; }
-.firmware-select-control .form-control { flex: 1; min-width: 0; }
+.firmware-select { flex: 1; }
 .firmware-select-control .danger-btn { flex: none; }
 .firmware-meta { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(120px, .6fr) minmax(220px, 2fr); gap: 14px; margin-top: 18px; }
 .upload-control { display: grid; gap: 8px; }

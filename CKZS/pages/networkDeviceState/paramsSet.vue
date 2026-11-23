@@ -45,14 +45,6 @@
                             <text class="unit">趟</text>
                         </view>
                     </view>
-                    <view class="setting-item">
-                        <text class="label">喂食超时</text>
-                        <view class="right-box">
-                            <input class="item-input" v-model="feedTimeout" type="number" min="0" :max="feedTimeoutUsesDistance ? 100 : undefined"
-                                :step="feedTimeoutUsesDistance ? 0.01 : 1" @blur="handleFeedTimeoutBlur" />
-                            <text class="unit">{{ feedTimeoutUsesDistance ? '米' : '秒' }}</text>
-                        </view>
-                    </view>
                 </view>
 
                 <view class="settings-group">
@@ -115,6 +107,10 @@
                             </picker>
                             <text class="defog-close" @click="saveDefogTime(0)">关闭</text>
                         </view>
+                    </view>
+                    <view class="setting-item">
+                        <text class="label">平移等待时间</text>
+                        <view class="right-box"><input class="item-input" v-model="translationWaitTime" type="number" @blur="handleTranslationWaitBlur" /><text class="unit">秒</text></view>
                     </view>
                 </view>
 
@@ -209,8 +205,6 @@ const remoteTime = ref('0');
 const nearTime = ref('0');
 const manualTrips = ref('0');
 const runMode = ref('未知');
-const feedTimeout = ref('0');
-const feedTimeoutUsesDistance = ref(false);
 const softLimit = ref('0');
 const feedSpeed = ref('0');
 const motorTorque = ref('0');
@@ -220,6 +214,7 @@ const chargingCurrentLimit = ref('0');
 const startMinimumVoltage = ref('0');
 const autoShutdownTime = ref('0');
 const defogTime = ref(null);
+const translationWaitTime = ref(0);
 const version = ref('');
 const appVersion = ref('');
 const deviceCode = ref('');
@@ -240,9 +235,6 @@ onLoad((options) => {
             nearTime.value = data.nearWaitTime;
             manualTrips.value = data.manualTripsVal;
             runMode.value = data.runMode;
-            feedTimeout.value = data.feedTimeout;
-            feedTimeoutUsesDistance.value = data.feedTimeoutDistance !== null && data.feedTimeoutDistance !== undefined;
-            if (feedTimeoutUsesDistance.value) feedTimeout.value = (data.feedTimeoutDistance / 100).toFixed(2);
             softLimit.value = (data.softLimit / 100).toFixed(2);
             feedSpeed.value = Number.isInteger(data.feedSpeed / 10)
                 ? data.feedSpeed / 10
@@ -254,6 +246,7 @@ onLoad((options) => {
             startMinimumVoltage.value = (data.startMinimumVoltage ?? 0) / 100;
             autoShutdownTime.value = data.autoShutdownTime ?? 0;
             defogTime.value = data.defogTime ?? null;
+            translationWaitTime.value = data.translationWaitTime ?? 0;
             version.value = data.version;
         } catch (error) {
             console.error('Data error:', error);
@@ -322,6 +315,15 @@ const handleDataBlur = (header, value) => {
     setDeviceData(header + value);
 };
 
+const handleTranslationWaitBlur = () => {
+    const value = Number(translationWaitTime.value);
+    if (String(translationWaitTime.value ?? '').trim() === '' || !Number.isSafeInteger(value) || value < 0) {
+        uni.showToast({ title: '平移等待时间需为非负整数秒', icon: 'none' });
+        return;
+    }
+    handleDataBlur('$k=', value);
+};
+
 const handleDefogTimeChange = (event) => {
     const value = encodeDefogTime(event.detail.value);
     if (value === null) {
@@ -333,20 +335,6 @@ const handleDefogTimeChange = (event) => {
 
 const saveDefogTime = async (value) => {
     if (await setDeviceData(`$j=${value}`)) defogTime.value = value;
-};
-
-const handleFeedTimeoutBlur = () => {
-    if (String(feedTimeout.value).trim() === '') {
-        uni.showToast({ title: '请输入有效的喂食超时时间', icon: 'none' });
-        return;
-    }
-    const value = Number(feedTimeout.value);
-    if (!Number.isFinite(value) || value < 0 || (feedTimeoutUsesDistance.value && value > 100)) {
-        uni.showToast({ title: feedTimeoutUsesDistance.value ? '喂食超时需为0-100米' : '请输入有效的喂食超时时间', icon: 'none' });
-        return;
-    }
-    const command = feedTimeoutUsesDistance.value ? `$i=${Math.round(value * 100)}` : `$5=${value}`;
-    setDeviceData(command);
 };
 
 const handleSoftLimitBlur = () => {

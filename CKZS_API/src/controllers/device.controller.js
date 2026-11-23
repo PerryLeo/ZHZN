@@ -6,25 +6,6 @@ import mqttService from '../services/mqtt.service.js';
 const BATCH_CONCURRENCY = 50;
 const STATUS_QUERY_LIMIT = 10;
 
-const getRawField = (rawData, field) => {
-  const match = String(rawData || '').match(new RegExp('(?:^|[|\\r\\n])\\s*' + field + '\\s*:\\s*([^|\\r\\n]+)', 'i'));
-  return match ? match[1].trim() : '';
-};
-
-const getStatusPayloadIdentity = (expectedDevice, payload) => {
-  const rawData = typeof payload === 'string' ? payload : '';
-  const imei = getRawField(rawData, 'IMEI');
-  const name = getRawField(rawData, 'Name');
-  return {
-    imei,
-    name,
-    matched: imei === String(expectedDevice.deviceCode).trim()
-      && name === String(expectedDevice.deviceName || '').trim(),
-  };
-};
-
-const isIdentityCheckCommand = (rawData) => /^\$c(?:\s|$)/i.test(String(rawData || '').trim());
-
 export const DeviceController = {
   async sendCommand(req, res) {
     try {
@@ -49,15 +30,6 @@ export const DeviceController = {
         const rawData = (params && params.data) ? String(params.data) + '\n' : '';
         if (!rawData.trim()) return fail(res, '透传模式缺少 params.data 字段');
         result = await mqttService.publishRawCommandAndWait(deviceCode, rawData, timeout || 10000);
-        if (isIdentityCheckCommand(rawData)) {
-          const identity = getStatusPayloadIdentity(device, result.data);
-          const identityMismatch = !identity.matched;
-          await Device.update(
-            { online: 1, identityAbnormal: identityMismatch ? 1 : 0 },
-            { where: { deviceCode } }
-          );
-          result = { ...result, identityMismatch, identity };
-        }
         return success(res, result, '透传指令已发送，已收到设备回复');
       }
 
@@ -97,35 +69,39 @@ export const DeviceController = {
         where: {
           deviceCode: { [Op.in]: uniqueCodes },
           status: 1,
-          online: 1,
           ...(isAdmin ? {} : { userId: req.user.id }),
         },
-        attributes: ['deviceCode', 'deviceName'],
+        attributes: ['deviceCode'],
       });
       if (allowedDevices.length !== uniqueCodes.length) {
-        return fail(res, '部分设备不存在、未绑定、离线或无操作权限', 403);
-      }
-      if (uniqueCodes.some(code => mqttService.isOtaBusy(code))) {
-        return fail(res, '部分设备正在升级，暂时无法批量下发指令', 409);
+        return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
       }
 
-      // 纯异步 fire-and-forget：并发 publish 到各设备 MQTT topic，不等回执
-      const total = uniqueCodes.length;
+      // 并发提交给 MQTT，只统计提交结果，不等待设备回执。
+      let total = 0;
+      let failedCount = 0;
+      let upgradingCount = 0;
       for (let i = 0; i < uniqueCodes.length; i += BATCH_CONCURRENCY) {
         const batch = uniqueCodes.slice(i, i + BATCH_CONCURRENCY);
-        await Promise.all(batch.map(code => {
-          try {
-            if (type === 'send') {
-              return mqttService.publishRaw(code, String(params?.data || ''));
-            }
-            return mqttService.publishCommand(code, { type, params: params || {} });
-          } catch {
-            return Promise.resolve();
+        const results = await Promise.allSettled(batch.map(async code => {
+          if (mqttService.isOtaBusy(code)) {
+            upgradingCount += 1;
+            return false;
           }
+          if (type === 'send') {
+            await mqttService.publishRaw(code, String(params?.data || ''));
+          } else {
+            await mqttService.publishCommand(code, { type, params: params || {} });
+          }
+          return true;
         }));
+        for (const result of results) {
+          if (result.status === 'rejected') failedCount += 1;
+          else if (result.value) total += 1;
+        }
       }
 
-      return success(res, { total }, `批量下发完成，已向 ${total} 台设备发送指令`);
+      return success(res, { total, failedCount, upgradingCount }, `已提交 ${total} 台设备的指令`);
     } catch (err) {
       return fail(res, err.message || '批量下发失败');
     }
@@ -151,7 +127,7 @@ export const DeviceController = {
           deviceCode: { [Op.in]: uniqueCodes },
           ...(isAdmin ? {} : { status: 1, userId: req.user.id }),
         },
-        attributes: ['deviceCode', 'deviceName'],
+        attributes: ['deviceCode'],
       });
       if (allowedDevices.length !== uniqueCodes.length) {
         return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
@@ -161,56 +137,38 @@ export const DeviceController = {
       }
 
       const settled = await Promise.allSettled(
-        uniqueCodes.map(deviceCode => {
-          const device = allowedDevices.find(item => item.deviceCode === deviceCode);
-          return mqttService.publishRawCommandAndWait(
-            deviceCode,
-            '$c\n',
-            timeout
-          );
-        })
+        uniqueCodes.map(deviceCode =>
+          mqttService.publishRawCommandAndWait(deviceCode, '$c\n', timeout)
+        )
       );
       const results = settled.map((result, index) => {
         const deviceCode = uniqueCodes[index];
         if (result.status === 'fulfilled') {
-          const device = allowedDevices.find(item => item.deviceCode === deviceCode);
-          const identity = getStatusPayloadIdentity(device, result.value.data);
           return {
             ...result.value,
             deviceCode,
             success: true,
-            identityMismatch: !identity.matched,
-            identity,
           };
         }
         return {
           deviceCode,
           success: false,
-          identityMismatch: false,
           error: result.reason?.message || '设备状态查询失败',
         };
       });
-      const successCount = results.filter(item => item.success).length;
-      const normalOnlineCodes = results.filter(item => item.success && !item.identityMismatch).map(item => item.deviceCode);
-      const identityAbnormalCodes = results.filter(item => item.success && item.identityMismatch).map(item => item.deviceCode);
-      const offlineCodes = results.filter(item => !item.success && !item.identityMismatch).map(item => item.deviceCode);
+      const onlineCodes = results.filter(item => item.success).map(item => item.deviceCode);
+      const offlineCodes = results.filter(item => !item.success).map(item => item.deviceCode);
 
       const onlineUpdates = [];
-      if (normalOnlineCodes.length > 0) {
+      if (onlineCodes.length > 0) {
         onlineUpdates.push(Device.update(
-          { online: 1, identityAbnormal: 0 },
-          { where: { deviceCode: { [Op.in]: normalOnlineCodes } } }
-        ));
-      }
-      if (identityAbnormalCodes.length > 0) {
-        onlineUpdates.push(Device.update(
-          { online: 1, identityAbnormal: 1 },
-          { where: { deviceCode: { [Op.in]: identityAbnormalCodes } } }
+          { online: 1 },
+          { where: { deviceCode: { [Op.in]: onlineCodes } } }
         ));
       }
       if (offlineCodes.length > 0) {
         onlineUpdates.push(Device.update(
-          { online: 0, identityAbnormal: 0 },
+          { online: 0 },
           { where: { deviceCode: { [Op.in]: offlineCodes } } }
         ));
       }
@@ -218,8 +176,8 @@ export const DeviceController = {
 
       return success(res, {
         total: results.length,
-        successCount,
-        failureCount: results.length - successCount,
+        successCount: onlineCodes.length,
+        failureCount: offlineCodes.length,
         results,
       }, '批量设备状态查询完成');
     } catch (err) {

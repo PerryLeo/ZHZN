@@ -12,12 +12,11 @@
       <div class="detail-hero-main">
         <span class="detail-device-icon" aria-hidden="true">
           <AppIcon name="device" :size="27" />
-          <i :class="{ online: deviceStatus.isOnline, abnormal: deviceStatus.key === 'identity-abnormal' }"></i>
+          <i :class="{ online: deviceStatus.isOnline }"></i>
         </span>
-        <div class="detail-identity">
+        <div class="detail-device-info">
           <div class="detail-title-row">
           <h2>{{ device.remarkName || '--' }}</h2>
-            <span class="tag" :class="deviceIdentityStatus.tone">{{ deviceIdentityStatus.label }}</span>
             <span class="tag" :class="abnormalStatusTone">{{ deviceState.abnormalStatus }}</span>
           </div>
         </div>
@@ -101,8 +100,8 @@
               <template v-else>
                 <label :for="`parameter-${item.key}`">{{ item.label }}</label>
                 <div class="parameter-control">
-                  <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.key === 'feedTimeout' ? 0 : item.min" :max="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 100 : item.max" :step="item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? 0.01 : item.step">
-                  <span>{{ item.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null ? '米' : item.unit }}</span>
+                  <input :id="`parameter-${item.key}`" v-model="parameterForm[item.key]" type="number" :min="item.min" :max="item.max" :step="item.step">
+                  <span>{{ item.unit }}</span>
                   <button type="button" :disabled="commandBusy || !canOperate" @click="saveParameter(item)">保存</button>
                 </div>
               </template>
@@ -110,10 +109,7 @@
             <div class="parameter-field">
               <label for="run-mode">运行模式</label>
               <div class="parameter-control">
-                <select id="run-mode" v-model="parameterForm.runMode">
-                  <option value="0">自动</option>
-                  <option value="1">手动</option>
-                </select>
+                <AppSearchSelect id="run-mode" v-model="parameterForm.runMode" class="run-mode-select" label="运行模式" :options="runModeOptions" />
                 <button type="button" :disabled="commandBusy || !canOperate" @click="saveRunMode">保存</button>
               </div>
             </div>
@@ -182,14 +178,19 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
+import AppSearchSelect from '../components/AppSearchSelect.vue';
 import { api } from '../services/api.js';
 import { getSelectedDevice } from '../services/deviceNavigation.js';
-import { getDeviceStatus, getIdentityStatus } from '../utils/deviceStatus.js';
+import { getDeviceStatus } from '../utils/deviceStatus.js';
 import { showToast } from '../utils/toast.js';
 import CopyResponseButton from '../components/CopyResponseButton.vue';
 import { createDeviceState, createSlotCommand, extractResponseText, getTimeCommand, parseDeviceResponse, formatDefogTime, encodeDefogTime } from '../utils/deviceProtocol.js';
 
 const DEFAULT_SLOTS_KEY = 'CKZS_ADMIN_DEVICE_SCHEDULE_DEFAULT';
+const runModeOptions = [
+  { value: '0', label: '自动' },
+  { value: '1', label: '手动' },
+];
 const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
@@ -213,7 +214,6 @@ const parameterForm = reactive({
   nearWaitTime: 0,
   farWaitTime: 0,
   manualTripsVal: 0,
-  feedTimeout: 0,
   softLimit: 0,
   feedSpeed: 0,
   motorTorque: 0,
@@ -236,7 +236,6 @@ const parameterFields = [
   { key: 'nearWaitTime', label: '近端等待时间', unit: '秒', command: '$1=', min: 0, step: 1 },
   { key: 'farWaitTime', label: '远端等待时间', unit: '秒', command: '$2=', min: 0, step: 1 },
   { key: 'manualTripsVal', label: '手动模式趟数', unit: '趟', command: '$3=', min: 0, step: 1 },
-  { key: 'feedTimeout', label: '喂食超时', unit: '秒', command: '$5=', min: 0, step: 1 },
   { key: 'softLimit', label: '软限位距离', unit: '米', command: '$7=', min: 0, max: 100, step: 0.01, scale: 100 },
   { key: 'feedSpeed', label: '送料电机转速', unit: '圈/秒', command: '$8=', min: 0, step: 0.1, scale: 10 },
   { key: 'motorTorque', label: '送料电机扭矩', unit: '%', command: '$9=', min: 0, max: 100, step: 1 },
@@ -251,7 +250,6 @@ const parameterFields = [
 
 const isBound = computed(() => device.value?.status === 1 && Boolean(device.value?.userId));
 const deviceStatus = computed(() => getDeviceStatus(device.value));
-const deviceIdentityStatus = computed(() => getIdentityStatus(device.value));
 const canOperate = computed(() => isBound.value && deviceStatus.value.isOnline);
 const canDeviceControl = computed(() => canOperate.value && !['unknown', 'returning'].includes(deviceState.controlState));
 const abnormalStatusTone = computed(() => {
@@ -272,9 +270,6 @@ const metrics = computed(() => [
   { label: '近端等待时间', value: deviceState.nearWaitTime, unit: '秒' },
   { label: '远端等待时间', value: deviceState.farWaitTime, unit: '秒' },
   { label: '手动模式趟数', value: deviceState.manualTripsVal, unit: '趟' },
-  deviceState.feedTimeoutDistance !== null
-    ? { label: '喂食超时', value: (deviceState.feedTimeoutDistance / 100).toFixed(2), unit: '米' }
-    : { label: '喂食超时', value: deviceState.feedTimeout, unit: '秒' },
   { label: '软限位距离', value: deviceState.softLimit > 0 ? (deviceState.softLimit / 100).toFixed(2) : '关闭', unit: deviceState.softLimit > 0 ? '米' : '' },
   { label: '送料电机转速', value: Number.isInteger(deviceState.feedSpeed / 10) ? deviceState.feedSpeed / 10 : (deviceState.feedSpeed / 10).toFixed(1), unit: '圈/秒' },
   { label: '送料电机扭矩', value: deviceState.motorTorque, unit: '%' },
@@ -295,9 +290,6 @@ const applyStateToForm = () => {
     nearWaitTime: deviceState.nearWaitTime,
     farWaitTime: deviceState.farWaitTime,
     manualTripsVal: deviceState.manualTripsVal,
-    feedTimeout: deviceState.feedTimeoutDistance !== null
-      ? deviceState.feedTimeoutDistance / 100
-      : deviceState.feedTimeout,
     softLimit: deviceState.softLimit / 100,
     feedSpeed: deviceState.feedSpeed / 10,
     motorTorque: deviceState.motorTorque,
@@ -397,18 +389,11 @@ const saveParameter = async (field, confirmedOutOfRange = false) => {
   )) {
     return showToast('平移等待时间需为非负整数秒', 'error');
   }
-  if (field.key === 'feedTimeout' && String(parameterForm[field.key] ?? '').trim() === '') {
-    return showToast('请输入有效的喂食超时时间', 'error');
-  }
   if (field.key === 'moveSpeed' && String(parameterForm[field.key] ?? '').trim() === '') {
     return showToast('请输入正确的移动速度', 'error');
   }
   const numericValue = Number(parameterForm[field.key]);
   if (!Number.isFinite(numericValue)) return showToast(`请输入正确的${field.label}`, 'error');
-  const usesFeedDistance = field.key === 'feedTimeout' && deviceState.feedTimeoutDistance !== null;
-  if (usesFeedDistance && (numericValue < 0 || numericValue > 100)) {
-    return showToast('喂食超时需为0-100米', 'error');
-  }
   if (field.key === 'moveSpeed' && (numericValue < 50 || numericValue > 100) && !confirmedOutOfRange) {
     pendingMoveSpeed.value = numericValue;
     moveSpeedConfirmVisible.value = true;
@@ -416,11 +401,10 @@ const saveParameter = async (field, confirmedOutOfRange = false) => {
   }
   if (field.min !== undefined && numericValue < field.min) return showToast(`${field.label}不能小于 ${field.min}`, 'error');
   if (field.max !== undefined && numericValue > field.max) return showToast(`${field.label}不能大于 ${field.max}`, 'error');
-  const command = usesFeedDistance ? '$i=' : field.command;
-  const commandValue = Math.round(numericValue * (usesFeedDistance ? 100 : field.scale || 1));
+  const commandValue = Math.round(numericValue * (field.scale || 1));
   commandBusy.value = true;
   try {
-    await sendCommand(`${command}${commandValue}`);
+    await sendCommand(`${field.command}${commandValue}`);
     showToast(`${field.label}已同步`);
   } catch (error) {
     showToast(error.message || '参数同步失败', 'error');
@@ -567,13 +551,12 @@ onMounted(async () => {
 .detail-device-icon { position: relative; width: 42px; height: 42px; display: grid; flex: 0 0 42px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; color: #fff; background: rgba(255,255,255,.12); }
 .detail-device-icon i { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: #b8c0cf; box-shadow: 0 1px 3px rgba(16,25,54,.28); }
 .detail-device-icon i.online { background: var(--success); }
-.detail-device-icon i.abnormal { background: #dc5252; }
 .readonly-device-name { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
-.detail-identity { min-width: 0; flex: 1; }
+.detail-device-info { min-width: 0; flex: 1; }
 .detail-title-row { display: flex; align-items: center; gap: 9px; }
 .detail-title-row h2 { max-width: 460px; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 21px; white-space: nowrap; }
 .detail-title-row .tag { border: 1px solid rgba(255,255,255,.14); }
-.detail-identity p { margin: 8px 0 0; color: #cbd6ff; font-size: 12px; }
+.detail-device-info p { margin: 8px 0 0; color: #cbd6ff; font-size: 12px; }
 .detail-hero-actions { display: flex; gap: 10px; }
 .detail-hero-actions .secondary-btn { border-color: rgba(255,255,255,.22); color: #fff; background: rgba(255,255,255,.1); }
 .detail-hero-actions .primary-btn { color: #284cc8; background: #fff; box-shadow: none; }
@@ -631,7 +614,9 @@ onMounted(async () => {
 .parameter-field label { display: block; margin-bottom: 6px; color: #556075; font-size: 12px; font-weight: 650; }
 .parameter-control { min-height: 43px; display: flex; align-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .parameter-control:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-.parameter-control input, .parameter-control select { min-width: 0; height: 41px; flex: 1; padding: 0 12px; border: 0; outline: none; color: var(--ink); background: transparent; }
+.parameter-control input { min-width: 0; height: 41px; flex: 1; padding: 0 12px; border: 0; outline: none; color: var(--ink); background: transparent; }
+.run-mode-select { flex: 1; }
+.run-mode-select :deep(.filter-select) { height: 41px; border: 0; border-radius: 0; }
 .parameter-control span { padding: 0 10px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .parameter-control button { height: 31px; margin-right: 5px; padding: 0 11px; border: 0; border-radius: 7px; color: var(--primary); background: var(--primary-soft); font-size: 11px; font-weight: 700; }
 .parameter-control button:disabled { cursor: not-allowed; opacity: .5; }
@@ -739,7 +724,6 @@ onMounted(async () => {
 .detail-tab-parameters .detail-device-icon { position: relative; width: 58px; height: 58px; display: grid; flex: 0 0 58px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; color: #fff; background: rgba(255,255,255,.12); }
 .detail-tab-parameters .detail-device-icon i { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: #b8c0cf; box-shadow: 0 1px 3px rgba(16,25,54,.28); }
 .detail-tab-parameters .detail-device-icon i.online { background: var(--success); }
-.detail-tab-parameters .detail-device-icon i.abnormal { background: #dc5252; }
 .detail-tab-parameters .readonly-device-name { color: var(--muted); font-size: 12px; }
 .detail-tab-parameters .detail-title-row h2 { max-width: 460px; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 24px; white-space: nowrap; }
 .detail-tab-parameters .detail-tabs { display: flex; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
@@ -754,7 +738,7 @@ onMounted(async () => {
 .detail-tab-parameters .parameter-field label { display: block; margin-bottom: 8px; color: #556075; font-size: 12px; font-weight: 650; }
 .detail-tab-parameters .parameter-control { min-height: 43px; display: flex; align-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .detail-tab-parameters .parameter-control:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-.detail-tab-parameters .parameter-control input, .detail-tab-parameters .parameter-control select { min-width: 0; height: 41px; flex: 1; padding: 0 12px; border: 0; outline: none; color: var(--ink); background: transparent; }
+.detail-tab-parameters .parameter-control input { min-width: 0; height: 41px; flex: 1; padding: 0 12px; border: 0; outline: none; color: var(--ink); background: transparent; }
 .detail-tab-parameters .parameter-control span { padding: 0 10px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .detail-tab-parameters .parameter-control button { height: 31px; margin-right: 5px; padding: 0 11px; border: 0; border-radius: 7px; color: var(--primary); background: var(--primary-soft); font-size: 11px; font-weight: 700; }
 .detail-tab-parameters .parameter-control button:disabled { cursor: not-allowed; opacity: .5; }

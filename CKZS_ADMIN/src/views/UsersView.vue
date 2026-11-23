@@ -10,7 +10,7 @@
         </span>
         <input v-model.trim="query.keyword" placeholder="搜索用户账号" @keyup.enter="search">
       </div>
-      <select v-model="query.role" class="filter-select"><option value="">全部角色</option><option value="user">APP 用户</option><option value="admin">管理员</option></select>
+      <AppSearchSelect v-model="query.role" label="用户角色" empty-label="全部角色" :options="roleOptions" />
       <button class="secondary-btn" type="button" @click="search">查询</button>
     </div>
     <div class="toolbar-actions"><span class="account-total">共 <strong>{{ pageData.total }}</strong> 个平台账号</span></div>
@@ -74,12 +74,17 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
+import AppSearchSelect from '../components/AppSearchSelect.vue';
 import { api } from '../services/api.js';
 import { formatTime } from '../utils/format.js';
 import { showToast } from '../utils/toast.js';
 import AppIcon from '../components/AppIcon.vue';
 import { getDeviceStatus } from '../utils/deviceStatus.js';
 
+const roleOptions = [
+  { value: 'user', label: 'APP 用户' },
+  { value: 'admin', label: '管理员' },
+];
 const loading = ref(false);
 const submitting = ref(false);
 const query = reactive({ page: 1, pageSize: 10, keyword: '', role: '' });
@@ -128,9 +133,7 @@ const refreshUserDeviceStatuses = async (devices) => {
       const statusMap = new Map((result?.results || []).map(item => [item.deviceCode, item]));
       batch.forEach(device => {
         const status = statusMap.get(device.deviceCode);
-        device.online = status?.success || status?.identityMismatch ? 1 : 0;
-        device.identityMismatch = Boolean(status?.identityMismatch);
-        device.identityAbnormal = status?.success && status.identityMismatch ? 1 : 0;
+        device.online = status?.success ? 1 : 0;
         device.onlineChecking = false;
       });
     } catch {
