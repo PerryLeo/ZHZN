@@ -29,9 +29,13 @@ export const publicRelease = row => ({
 const appReleaseService = {
   async list(query = {}) {
     const page = Math.max(1, Math.min(Number.parseInt(query.page, 10) || 1, 100000));
-    const pageSize = 20;
-    const result = await AppRelease.findAndCountAll({ order: [['versionCode', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize });
-    return { list: result.rows, total: result.count, page, pageSize, totalPages: Math.ceil(result.count / pageSize) };
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(query.pageSize, 10) || 20));
+    const order = [['versionCode', 'DESC']];
+    const [result, published] = await Promise.all([
+      AppRelease.findAndCountAll({ order, limit: pageSize, offset: (page - 1) * pageSize }),
+      AppRelease.findOne({ where: { status: 'published' }, attributes: ['versionName', 'versionCode'], order }),
+    ]);
+    return { list: result.rows, total: result.count, page, pageSize, totalPages: Math.ceil(result.count / pageSize), latestPublished: published };
   },
 
   async upload(request, admin) {

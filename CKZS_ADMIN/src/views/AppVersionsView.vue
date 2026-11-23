@@ -34,7 +34,17 @@
             </div></td>
           </tr>
         </tbody>
-      </table><AppPagination :page="page" :total="total" :total-pages="totalPages" @change="load" /></div>
+      </table>
+      <AppPagination
+        :page="page"
+        :total="total"
+        :total-pages="totalPages"
+        :page-size="pageSize"
+        :disabled="loading"
+        @change="load"
+        @page-size-change="changePageSize"
+      />
+      </div>
     </section>
     <AppModal v-model="editVisible" title="编辑版本" :loading="acting" @confirm="saveEdit">
       <div class="form-field"><label>版本 {{ editing?.versionName }}</label></div>
@@ -67,6 +77,7 @@ import AppPagination from '../components/AppPagination.vue';
 
 const candidate = ref(null), fileInput = ref(null), force = ref(false), uploading = ref(false), uploadProgress = ref(0);
 const releases = ref([]), loading = ref(false), loadError = ref(''), page = ref(1), total = ref(0), totalPages = ref(0), acting = ref(false);
+const pageSize = ref(10);
 const latestPublished = ref(null);
 const qrVisible = ref(false);
 const latestDownloadUrl = computed(() => `${window.location.origin}/api/app/latest/download`);
@@ -82,13 +93,22 @@ const chooseFile = event => {
   if (!/\.apk$/i.test(file.name) || !file.size || file.size > 200 * 1024 * 1024) { showToast('请选择不超过 200 MB 的非空 APK 文件', 'error'); event.target.value = ''; return; }
   candidate.value = file;
 };
-const load = async (nextPage = 1) => {
+const load = async (nextPage = 1, nextPageSize = pageSize.value) => {
   if (loading.value) return;
   loading.value = true; loadError.value = '';
-  try { const result = await api.get('/api/app/releases', { page: nextPage }); releases.value = result.list; if (result.page === 1) latestPublished.value = result.list.find(release => release.status === 'published') || null; page.value = result.page; total.value = result.total; totalPages.value = result.totalPages; }
+  try {
+    const result = await api.get('/api/app/releases', { page: nextPage, pageSize: nextPageSize });
+    releases.value = result.list;
+    latestPublished.value = result.latestPublished;
+    page.value = result.page;
+    pageSize.value = result.pageSize;
+    total.value = result.total;
+    totalPages.value = result.totalPages;
+  }
   catch (error) { loadError.value = error.message; showToast(error.message, 'error'); }
   finally { loading.value = false; }
 };
+const changePageSize = (size) => load(1, size);
 const upload = async () => {
   if (!candidate.value || uploading.value) return;
   uploading.value = true; uploadProgress.value = 0;

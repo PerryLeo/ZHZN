@@ -41,7 +41,15 @@
         </template>
       </tbody>
     </table>
-    <AppPagination :page="pageData.page" :total="pageData.total" :total-pages="pageData.totalPages" @change="changePage" />
+    <AppPagination
+      :page="pageData.page"
+      :total="pageData.total"
+      :total-pages="pageData.totalPages"
+      :page-size="pageData.pageSize"
+      :disabled="loading"
+      @change="changePage"
+      @page-size-change="changePageSize"
+    />
   </div>
 
   <AppModal v-model="resetModal.visible" title="重置用户密码" confirm-text="确认操作" danger :loading="submitting" @confirm="resetPassword">
@@ -92,15 +100,23 @@ const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPage
 const resetModal = reactive({ visible: false, user: null });
 const deviceModal = reactive({ visible: false, loading: false, user: null, devices: [] });
 const router = useRouter();
+let listRequestId = 0;
 
 const load = async () => {
+  const requestId = ++listRequestId;
   loading.value = true;
-  try { Object.assign(pageData, await api.get('/api/admin/users', query)); }
-  catch (error) { showToast(error.message, 'error'); }
-  finally { loading.value = false; }
+  try {
+    const result = await api.get('/api/admin/users', query);
+    if (requestId === listRequestId) Object.assign(pageData, result);
+  } catch (error) {
+    if (requestId === listRequestId) showToast(error.message, 'error');
+  } finally {
+    if (requestId === listRequestId) loading.value = false;
+  }
 };
 const search = () => { query.page = 1; load(); };
 const changePage = (page) => { query.page = page; load(); };
+const changePageSize = (size) => { query.pageSize = size; search(); };
 const openReset = (user) => { resetModal.user = user; resetModal.visible = true; };
 const resetPassword = async () => {
   submitting.value = true;

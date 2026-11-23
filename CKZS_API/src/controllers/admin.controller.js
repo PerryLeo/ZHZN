@@ -113,20 +113,24 @@ export const AdminController = {
       const { page, pageSize, offset } = getPagination(req.query);
       const keyword = String(req.query.keyword || '').trim();
       const where = {};
-      const groupId = Number.parseInt(req.query.groupId, 10);
+      const userId = Number(req.query.userId);
 
-      if (Number.isInteger(groupId) && groupId > 0) {
+      if (req.query.groupId) {
+        const groupId = Number(req.query.groupId);
+        if (!Number.isSafeInteger(groupId) || groupId <= 0) return fail(res, '设备分组 ID 无效');
+        if (!Number.isSafeInteger(userId) || userId <= 0) return fail(res, '请先选择所属用户');
         const group = await DeviceGroup.findOne({
-          where: { id: groupId, userId: req.user.id },
+          where: { id: groupId, userId },
           attributes: ['id'],
         });
-        if (!group) return fail(res, '设备分组不存在或不属于当前管理员', 404);
+        if (!group) return fail(res, '设备分组不存在或不属于所选用户', 404);
 
         const members = await DeviceGroupMember.findAll({
           where: { groupId },
           attributes: ['deviceId'],
         });
         where.id = { [Op.in]: members.map(member => member.deviceId) };
+        where[Op.and] = [{ status: 1 }];
       }
 
       if (keyword) {
@@ -142,7 +146,7 @@ export const AdminController = {
         where.online = Number(req.query.online) === 1 ? 1 : 0;
       }
       if (req.query.deviceType) where.deviceType = req.query.deviceType;
-      if (req.query.userId) where.userId = Number(req.query.userId);
+      if (req.query.userId) where.userId = userId;
       const { rows, count } = await Device.findAndCountAll({
         where,
         include: [{ model: User, as: 'owner', attributes: ['id', 'username'] }],

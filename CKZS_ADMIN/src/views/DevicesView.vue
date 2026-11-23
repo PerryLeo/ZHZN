@@ -10,14 +10,13 @@
         </span>
         <input v-model.trim="query.keyword" placeholder="搜索设备名称或编码" @keyup.enter="search">
       </div>
-      <AppSearchSelect v-model="selectedGroupId" class="group-filter" label="设备分组" empty-label="全部设备分组" :options="groupOptions" @change="search" />
-      <AppSearchSelect v-model="query.userId" class="owner-filter" label="所属用户" empty-label="全部用户" search-placeholder="搜索用户账号" :options="ownerOptions" @change="search" />
+      <AppSearchSelect v-model="query.userId" class="owner-filter" label="所属用户" empty-label="全部用户" search-placeholder="搜索用户账号" :options="ownerOptions" @change="changeOwner" />
+      <AppSearchSelect v-model="selectedGroupId" label="设备分组" :empty-label="query.userId ? '全部设备分组' : '请先选择用户'" :options="groupOptions" :disabled="!query.userId || groupsLoading" @change="search" />
       <AppSearchSelect v-model="query.status" label="设备状态" empty-label="全部设备状态" :options="statusOptions" />
       <button class="secondary-btn" type="button" @click="search">查询</button>
       <span v-if="onlineStatusChecking" class="online-checking-hint"><i></i>正在检测当前页设备在线状态...</span>
     </div>
     <div class="toolbar-actions">
-      <button class="secondary-btn" type="button" @click="openGroupModal">+ 新建设备分组</button>
       <button class="primary-btn" type="button" @click="openDeviceForm()">+ 登记设备</button>
     </div>
   </div>
@@ -70,10 +69,7 @@
       :total="pageData.total"
       :total-pages="pageData.totalPages"
       :page-size="pageData.pageSize"
-      :page-sizes="pageSizes"
       :disabled="loading"
-      numbered
-      jumpable
       @change="changePage"
       @page-size-change="changePageSize"
     />
@@ -83,7 +79,7 @@
     <div class="form-field"><label>设备编码</label><input v-model.trim="deviceForm.deviceCode" class="form-control" :disabled="Boolean(deviceModal.editing)" placeholder="请输入设备唯一编码" required></div>
     <div class="form-field"><label>设备初始名称</label><input v-model.trim="deviceForm.deviceName" class="form-control" :disabled="Boolean(deviceModal.editing)" placeholder="请输入硬件设备名称" required></div>
     <div v-if="deviceModal.editing" class="form-field"><label>备注名称</label><input v-model.trim="deviceForm.remarkName" class="form-control" placeholder="请输入备注名称"></div>
-    <div class="form-field"><label for="device-type">设备类型</label><AppSearchSelect id="device-type" v-model="deviceForm.deviceType" label="设备类型" :options="deviceTypeOptions" full-width /></div>
+    <div class="form-field"><label for="device-type">设备类型</label><input id="device-type" class="form-control" :value="typeLabel(deviceModal.editing?.deviceType || 'dtu')" readonly></div>
   </AppModal>
 
   <AppModal v-model="bindModal.visible" title="分配设备" confirm-text="确认分配" :loading="submitting" @confirm="bindDevice">
@@ -99,38 +95,11 @@
     <p class="confirm-copy">确认永久删除设备 <strong>{{ deleteModal.device?.remarkName || '--' }}</strong> 吗？设备资料删除后无法恢复。</p>
   </AppModal>
 
-  <AppModal v-model="groupModal.visible" title="新建设备分组" confirm-text="创建分组" :loading="groupModal.submitting" @confirm="createDeviceGroup">
-    <div class="form-field">
-      <label>分组名称</label>
-      <input v-model.trim="groupModal.name" class="form-control" maxlength="50" placeholder="请输入分组名称">
-    </div>
-    <div class="group-picker-header">
-      <div><strong>选择设备</strong><span>仅展示已绑定设备，同一设备可加入多个分组</span></div>
-      <b>已选 {{ selectedGroupDeviceIds.length }} 台</b>
-    </div>
-    <div v-if="groupModal.loadingDevices" class="loading group-picker-loading">设备加载中...</div>
-    <div v-else-if="!boundDevices.length" class="empty-state group-picker-empty">暂无可分组的已绑定设备</div>
-    <div v-else class="group-device-picker">
-      <label v-for="device in boundDevices" :key="device.id" class="group-device-option" :class="{ selected: selectedGroupDeviceIds.includes(device.id) }">
-        <input v-model="selectedGroupDeviceIds" type="checkbox" :value="device.id">
-        <span class="device-thumb device-asset-thumb" aria-hidden="true">
-          <AppIcon name="device" :size="19" />
-          <i :class="{ online: getDeviceStatus(device).isOnline }"></i>
-        </span>
-        <span class="group-device-copy">
-          <strong>{{ device.remarkName || '--' }}</strong>
-          <small>{{ device.deviceCode }} · {{ device.owner?.username || '暂无所属用户' }}</small>
-        </span>
-        <span class="tag" :class="getDeviceStatus(device).tone">{{ getDeviceStatus(device).label }}</span>
-      </label>
-    </div>
-  </AppModal>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppSearchSelect from '../components/AppSearchSelect.vue';
@@ -141,7 +110,6 @@ import { getDeviceStatus } from '../utils/deviceStatus.js';
 import { getCsqSignalLevel, parseDeviceStatusReport } from '../utils/deviceProtocol.js';
 import { showToast } from '../utils/toast.js';
 
-const deviceTypeOptions = ['dtu', 'sensor', 'gateway', 'camera', 'controller'].map(type => ({ value: type, label: typeLabel(type) }));
 const statusOptions = [
   { value: 'online', label: '在线' },
   { value: 'offline', label: '离线' },
@@ -149,7 +117,6 @@ const statusOptions = [
 const loading = ref(false);
 const submitting = ref(false);
 const onlineStatusChecking = ref(false);
-const pageSizes = [10, 20, 50];
 const statusQueryLimit = 10;
 const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', userId: '' });
 const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPages: 0 });
@@ -157,7 +124,7 @@ const deviceModal = reactive({ visible: false, editing: null });
 const bindModal = reactive({ visible: false, device: null });
 const unbindModal = reactive({ visible: false, device: null });
 const deleteModal = reactive({ visible: false, device: null });
-const deviceForm = reactive({ deviceCode: '', deviceName: '', remarkName: '', deviceType: 'dtu' });
+const deviceForm = reactive({ deviceCode: '', deviceName: '', remarkName: '' });
 const users = ref([]);
 const ownerOptions = computed(() => users.value.map(user => ({ value: user.id, label: user.username })));
 const bindUserOptions = computed(() => users.value.map(user => ({
@@ -171,9 +138,8 @@ const groupOptions = computed(() => deviceGroups.value.map(group => ({
   label: `${group.name}（${group.deviceCount}）`,
 })));
 const selectedGroupId = ref('');
-const boundDevices = ref([]);
-const selectedGroupDeviceIds = ref([]);
-const groupModal = reactive({ visible: false, name: '', loadingDevices: false, submitting: false });
+const groupsLoading = ref(false);
+let groupRequestId = 0;
 const router = useRouter();
 let listRequestId = 0;
 
@@ -269,7 +235,11 @@ const openDetail = (device) => {
 };
 const openDeviceForm = (device = null) => {
   deviceModal.editing = device;
-  Object.assign(deviceForm, device ? { deviceCode: device.deviceCode, deviceName: device.reportedDeviceName || '', remarkName: device.remarkName || '', deviceType: device.deviceType || 'dtu' } : { deviceCode: '', deviceName: '', remarkName: '', deviceType: 'dtu' });
+  Object.assign(deviceForm, {
+    deviceCode: device?.deviceCode || '',
+    deviceName: device?.reportedDeviceName || '',
+    remarkName: device?.remarkName || '',
+  });
   deviceModal.visible = true;
 };
 const formatBattery = (value) => Number.isFinite(Number(value)) ? `${Number(value)}%` : '--';
@@ -312,8 +282,8 @@ const handleDeviceAction = async (device) => {
 const saveDevice = async () => {
   submitting.value = true;
   try {
-    if (deviceModal.editing) await api.put(`/api/admin/devices/${deviceModal.editing.id}`, deviceForm);
-    else await api.post('/api/admin/devices', deviceForm);
+    if (deviceModal.editing) await api.put(`/api/admin/devices/${deviceModal.editing.id}`, { remarkName: deviceForm.remarkName });
+    else await api.post('/api/admin/devices', { ...deviceForm, deviceType: 'dtu' });
     deviceModal.visible = false; showToast(deviceModal.editing ? '设备信息已更新' : '设备已登记'); await load();
   } catch (error) { showToast(error.message, 'error'); }
   finally { submitting.value = false; }
@@ -328,59 +298,26 @@ const fetchAllUsers = async () => {
   return list;
 };
 const loadDeviceGroups = async () => {
+  const requestId = ++groupRequestId;
+  const userId = query.userId;
+  groupsLoading.value = Boolean(userId);
+  if (!userId) return;
   try {
-    deviceGroups.value = await api.get('/api/device-groups');
+    const groups = await api.get(`/api/admin/users/${userId}/device-groups`);
+    if (requestId !== groupRequestId) return;
+    deviceGroups.value = groups;
     if (selectedGroupId.value && !deviceGroups.value.some(group => group.id === Number(selectedGroupId.value))) selectedGroupId.value = '';
   } catch (error) {
-    showToast(error.message, 'error');
-  }
-};
-const fetchAllBoundDevices = async () => {
-  const first = await api.get('/api/admin/devices', { page: 1, pageSize: 100, status: 1 });
-  const list = [...first.list];
-  for (let page = 2; page <= first.totalPages; page += 1) {
-    const next = await api.get('/api/admin/devices', { page, pageSize: 100, status: 1 });
-    list.push(...next.list);
-  }
-  return list;
-};
-const openGroupModal = async () => {
-  groupModal.visible = true;
-  groupModal.name = '';
-  groupModal.loadingDevices = true;
-  selectedGroupDeviceIds.value = [];
-  try {
-    boundDevices.value = await fetchAllBoundDevices();
-    if (!boundDevices.value.length) showToast('暂无可分组的已绑定设备', 'error');
-  } catch (error) {
-    boundDevices.value = [];
-    showToast(error.message, 'error');
+    if (requestId === groupRequestId) showToast(error.message, 'error');
   } finally {
-    groupModal.loadingDevices = false;
+    if (requestId === groupRequestId) groupsLoading.value = false;
   }
 };
-const createDeviceGroup = async () => {
-  const name = groupModal.name.trim();
-  if (!name) return showToast('请输入分组名称', 'error');
-  if (!selectedGroupDeviceIds.value.length) return showToast('请至少选择一台设备', 'error');
-
-  groupModal.submitting = true;
-  try {
-    const created = await api.post('/api/device-groups', {
-      name,
-      deviceIds: selectedGroupDeviceIds.value,
-    });
-    await loadDeviceGroups();
-    selectedGroupId.value = created?.id || '';
-    query.page = 1;
-    groupModal.visible = false;
-    showToast('分组创建成功');
-    await load();
-  } catch (error) {
-    showToast(error.message || '分组创建失败', 'error');
-  } finally {
-    groupModal.submitting = false;
-  }
+const changeOwner = () => {
+  selectedGroupId.value = '';
+  deviceGroups.value = [];
+  void loadDeviceGroups();
+  search();
 };
 const openBind = async (device) => {
   try {
@@ -391,14 +328,26 @@ const openBind = async (device) => {
 };
 const bindDevice = async () => {
   submitting.value = true;
-  try { await api.post(`/api/admin/devices/${bindModal.device.id}/bind`, { userId: bindUserId.value }); bindModal.visible = false; showToast('设备分配成功，APP 与 PC 端将同步显示'); await load(); }
+  try {
+    await api.post(`/api/admin/devices/${bindModal.device.id}/bind`, { userId: bindUserId.value });
+    bindModal.visible = false;
+    showToast('设备分配成功，APP 与 PC 端将同步显示');
+    await loadDeviceGroups();
+    await load();
+  }
   catch (error) { showToast(error.message, 'error'); }
   finally { submitting.value = false; }
 };
 const openUnbind = (device) => { unbindModal.device = device; unbindModal.visible = true; };
 const unbindDevice = async () => {
   submitting.value = true;
-  try { await api.post(`/api/admin/devices/${unbindModal.device.id}/unbind`); unbindModal.visible = false; showToast('设备已解绑，APP 端将同步移除'); await load(); }
+  try {
+    await api.post(`/api/admin/devices/${unbindModal.device.id}/unbind`);
+    unbindModal.visible = false;
+    showToast('设备已解绑，APP 端将同步移除');
+    await loadDeviceGroups();
+    await load();
+  }
   catch (error) { showToast(error.message, 'error'); }
   finally { submitting.value = false; }
 };
@@ -424,7 +373,6 @@ const deleteDevice = async () => {
 
 onMounted(() => Promise.all([
   load(),
-  loadDeviceGroups(),
   fetchAllUsers()
     .then(list => { users.value = list; })
     .catch(error => showToast(error.message || '用户列表加载失败', 'error')),

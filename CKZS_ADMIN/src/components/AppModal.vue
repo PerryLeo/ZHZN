@@ -2,7 +2,7 @@
   <Teleport to="body">
     <Transition name="modal-fade">
       <div v-if="modelValue" class="modal-mask" @click.self="$emit('update:modelValue', false)">
-        <div class="modal">
+        <div class="modal" :class="{ 'modal-wide': wide }" role="dialog" aria-modal="true" :aria-label="title">
           <div class="modal-header">
             <h3>{{ title }}</h3>
             <button class="modal-close" type="button" aria-label="关闭弹窗" @click="$emit('update:modelValue', false)"><AppIcon name="close" :size="18" /></button>
@@ -32,7 +32,13 @@ defineProps({
   loading: Boolean,
   danger: Boolean,
   showCancel: { type: Boolean, default: true },
+  wide: Boolean,
 });
 
 defineEmits(['update:modelValue', 'confirm']);
 </script>
+
+<style scoped>
+.modal-wide { width: min(1240px, 100%); }
+.modal-wide .modal-body { overscroll-behavior: contain; }
+</style>

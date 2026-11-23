@@ -1,19 +1,29 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
-import { Device, DeviceGroup, User } from '../models/index.js';
+import { Device, DeviceGroup } from '../models/index.js';
 import { success, fail } from '../utils/response.js';
 
-const groupInclude = (userId, isAdmin = false) => ({
+const groupInclude = (userId) => ({
   model: Device,
   as: 'devices',
-    attributes: ['id', 'deviceCode', 'deviceName', 'remarkName', 'online'],
-  where: {
-    status: 1,
-    ...(isAdmin ? {} : { userId }),
-  },
+  attributes: ['id'],
+  where: { userId, status: 1 },
   required: false,
   through: { attributes: [] },
 });
+
+const listGroups = async (userId, res) => {
+  try {
+    const groups = await DeviceGroup.findAll({
+      where: { userId },
+      include: [groupInclude(userId)],
+      order: [['createdAt', 'DESC']],
+    });
+    return success(res, groups.map(serializeGroup));
+  } catch (error) {
+    return fail(res, error.message || '设备分组获取失败');
+  }
+};
 
 const serializeGroup = (group) => {
   const data = group.toJSON ? group.toJSON() : group;
@@ -29,19 +39,14 @@ const serializeGroup = (group) => {
 };
 
 export const DeviceGroupController = {
-  async list(req, res) {
-    try {
-      const operator = await User.findByPk(req.user.id, { attributes: ['role'] });
-      const isAdmin = operator?.role === 'admin';
-      const groups = await DeviceGroup.findAll({
-        where: { userId: req.user.id },
-        include: [groupInclude(req.user.id, isAdmin)],
-        order: [['createdAt', 'DESC']],
-      });
-      return success(res, groups.map(serializeGroup));
-    } catch (error) {
-      return fail(res, error.message || '设备分组获取失败');
-    }
+  list(req, res) {
+    return listGroups(req.user.id, res);
+  },
+
+  listForUser(req, res) {
+    const userId = Number(req.params.id);
+    if (!Number.isSafeInteger(userId) || userId <= 0) return fail(res, '用户 ID 无效');
+    return listGroups(userId, res);
   },
 
   async create(req, res) {
@@ -58,9 +63,6 @@ export const DeviceGroupController = {
       if (name.length > 50) return fail(res, '分组名称不能超过 50 个字符');
       if (deviceIds.length === 0) return fail(res, '请至少选择一台设备');
 
-      const operator = await User.findByPk(req.user.id, { attributes: ['role'] });
-      const isAdmin = operator?.role === 'admin';
-
       transaction = await sequelize.transaction();
 
       const existing = await DeviceGroup.findOne({
@@ -76,9 +78,10 @@ export const DeviceGroupController = {
         where: {
           id: { [Op.in]: deviceIds },
           status: 1,
-          ...(isAdmin ? {} : { userId: req.user.id }),
+          userId: req.user.id,
         },
         transaction,
+        lock: transaction.LOCK.UPDATE,
       });
       if (devices.length !== deviceIds.length) {
         await transaction.rollback();
@@ -93,7 +96,7 @@ export const DeviceGroupController = {
       await transaction.commit();
 
       const created = await DeviceGroup.findByPk(group.id, {
-        include: [groupInclude(req.user.id, isAdmin)],
+        include: [groupInclude(req.user.id)],
       });
       return success(res, serializeGroup(created), '分组创建成功', 201);
     } catch (error) {

@@ -135,12 +135,26 @@
               </tr>
             </tbody>
           </table>
-          <AppPagination :page="batchPage" :total="batchTotal" :total-pages="batchTotalPages" @change="loadBatches" />
+          <AppPagination
+            :page="batchPage"
+            :total="batchTotal"
+            :total-pages="batchTotalPages"
+            :page-size="batchPageSize"
+            :disabled="loadingBatches"
+            @change="loadBatches"
+            @page-size-change="changeBatchPageSize"
+          />
         </div>
       </section>
+    </template>
 
-      <section v-if="selectedBatch" class="panel ota-panel batch-detail-panel">
-        <div class="panel-header"><div><h2>批次详情</h2><p>{{ selectedBatch.id }} · {{ selectedBatch.firmwareFile }} · {{ selectedBatch.firmwareVersion || '版本未识别' }}</p></div><span class="tag" :class="statusTone(selectedBatch.status)">{{ statusLabel(selectedBatch.status) }}</span></div>
+    <AppModal :model-value="batchDetailVisible" title="批次详情" wide confirm-text="关闭" :show-cancel="false" @update:model-value="closeBatchDetail" @confirm="closeBatchDetail">
+      <div v-if="!selectedBatch" class="loading modal-loading" role="status">正在加载批次详情...</div>
+      <template v-else>
+        <div class="batch-detail-meta">
+          <span>{{ selectedBatch.id }} · {{ selectedBatch.firmwareFile }} · {{ selectedBatch.firmwareVersion || '版本未识别' }}</span>
+          <span class="tag" :class="statusTone(selectedBatch.status)">{{ statusLabel(selectedBatch.status) }}</span>
+        </div>
         <div class="batch-summary">
           <div><span>目标</span><strong>{{ selectedBatch.targetCount }}</strong></div>
           <div><span>成功</span><strong class="good-count">{{ selectedBatch.successCount }}</strong></div>
@@ -150,7 +164,7 @@
         <div class="batch-actions">
           <button v-if="selectedBatch.status === 'queued' || selectedBatch.status === 'running'" class="secondary-btn" type="button" :disabled="batchActionBusy" @click="runBatchAction('pause')">暂停后续设备</button>
           <button v-if="selectedBatch.status === 'paused'" class="secondary-btn" type="button" :disabled="batchActionBusy" @click="runBatchAction('resume')">恢复队列</button>
-          <button v-if="selectedBatch.failedCount > 0" class="secondary-btn" type="button" :disabled="batchActionBusy" @click="retryFailed">重试失败设备</button>
+          <button v-if="selectedBatch.failedCount > 0" class="secondary-btn" type="button" :disabled="batchActionBusy" @click="runBatchAction('retry-failed')">重试失败设备</button>
         </div>
         <div class="table-wrap ota-table-wrap">
           <table class="data-table ota-task-table">
@@ -169,8 +183,8 @@
             </tbody>
           </table>
         </div>
-      </section>
-    </template>
+      </template>
+    </AppModal>
 
     <AppModal v-model="confirmVisible" title="确认 OTA 更新" confirm-text="创建升级批次" :loading="creatingBatch" @confirm="createBatch">
       <p class="confirm-copy">将使用固件 <strong>{{ selectedFirmware?.firmwareVersion || firmwareFile }}</strong>，对预览中的 <strong>{{ preview?.eligibleCount || 0 }} 台在线设备</strong>逐台执行 OTA。离线设备会记录为跳过。</p>
@@ -231,12 +245,15 @@ const creatingBatch = ref(false);
 const confirmVisible = ref(false);
 const batches = ref([]);
 const batchPage = ref(1);
-const batchPageSize = 10;
+const batchPageSize = ref(10);
 const batchTotal = ref(0);
 const batchTotalPages = ref(1);
 const historyStatus = ref('');
 const loadingBatches = ref(false);
+let batchListRequestId = 0;
 const selectedBatch = ref(null);
+const batchDetailVisible = ref(false);
+let batchDetailRequestId = 0;
 const batchActionBusy = ref(false);
 const firmwareInput = ref(null);
 const uploadCandidate = ref(null);
@@ -434,52 +451,71 @@ const openHistory = async () => {
   await loadBatches(1);
 };
 
-const loadBatches = async (page = batchPage.value, { silent = false } = {}) => {
+const loadBatches = async (page = batchPage.value, { silent = false, pageSize = batchPageSize.value } = {}) => {
+  if (silent && loadingBatches.value) return;
+  const requestId = ++batchListRequestId;
   if (!silent) loadingBatches.value = true;
   try {
-    const result = await api.get('/api/ota/batches', { page, pageSize: batchPageSize, status: historyStatus.value });
+    const result = await api.get('/api/ota/batches', { page, pageSize, status: historyStatus.value });
+    if (requestId !== batchListRequestId) return;
+    const lastPage = Math.max(result.totalPages, 1);
+    if (page > lastPage) return loadBatches(lastPage, { silent, pageSize });
     batches.value = result.list || [];
     batchPage.value = result.page || page;
+    batchPageSize.value = result.pageSize;
     batchTotal.value = result.total || 0;
-    batchTotalPages.value = result.totalPages || 1;
-  } catch (error) { if (!silent) showToast(error.message, 'error'); }
-  finally { if (!silent) loadingBatches.value = false; }
+    batchTotalPages.value = lastPage;
+  } catch (error) {
+    if (!silent && requestId === batchListRequestId) showToast(error.message, 'error');
+  } finally {
+    if (!silent && requestId === batchListRequestId) loadingBatches.value = false;
+  }
 };
+const changeBatchPageSize = (pageSize) => loadBatches(1, { pageSize });
 
 const selectBatch = async (batchId) => {
-  try { selectedBatch.value = await api.get(`/api/ota/batches/${batchId}`); }
-  catch (error) { showToast(error.message, 'error'); }
+  const requestId = ++batchDetailRequestId;
+  selectedBatch.value = null;
+  batchDetailVisible.value = true;
+  try {
+    const batch = await api.get(`/api/ota/batches/${batchId}`);
+    if (requestId === batchDetailRequestId) selectedBatch.value = batch;
+  } catch (error) {
+    if (requestId !== batchDetailRequestId) return;
+    closeBatchDetail();
+    showToast(error.message, 'error');
+  }
+};
+
+const closeBatchDetail = () => {
+  batchDetailRequestId += 1;
+  batchDetailVisible.value = false;
+  selectedBatch.value = null;
 };
 
 const runBatchAction = async (action) => {
-  if (!selectedBatch.value) return;
+  if (!selectedBatch.value || batchActionBusy.value) return;
+  const requestId = ++batchDetailRequestId;
+  const batchId = selectedBatch.value.id;
   batchActionBusy.value = true;
   try {
-    selectedBatch.value = await api.post(`/api/ota/batches/${selectedBatch.value.id}/${action}`, {});
+    const batch = await api.post(`/api/ota/batches/${batchId}/${action}`, {});
+    if (requestId === batchDetailRequestId) selectedBatch.value = batch;
     await loadBatches(batchPage.value);
-    showToast(action === 'pause' ? '当前设备完成后将暂停队列' : 'OTA队列已恢复');
-  } catch (error) { showToast(error.message, 'error'); }
-  finally { batchActionBusy.value = false; }
-};
-
-const retryFailed = async () => {
-  if (!selectedBatch.value) return;
-  batchActionBusy.value = true;
-  try {
-    selectedBatch.value = await api.post(`/api/ota/batches/${selectedBatch.value.id}/retry-failed`, {});
-    await loadBatches(batchPage.value);
-    showToast('失败设备已重新排队');
+    showToast({ pause: '当前设备完成后将暂停队列', resume: 'OTA队列已恢复', 'retry-failed': '失败设备已重新排队' }[action]);
   } catch (error) { showToast(error.message, 'error'); }
   finally { batchActionBusy.value = false; }
 };
 
 const refreshSelectedBatch = async () => {
-  if (polling || section.value !== 'history' || !selectedBatch.value) return;
+  if (polling || batchActionBusy.value || !batchDetailVisible.value || !selectedBatch.value) return;
   polling = true;
+  const requestId = batchDetailRequestId;
   const currentId = selectedBatch.value.id;
   try {
     const result = await api.get(`/api/ota/batches/${currentId}`);
-    if (selectedBatch.value?.id === currentId) selectedBatch.value = result;
+    if (requestId !== batchDetailRequestId) return;
+    selectedBatch.value = result;
     await loadBatches(batchPage.value, { silent: true });
   } catch { /* keep the last visible state while polling */ }
   finally { polling = false; }
@@ -487,10 +523,8 @@ const refreshSelectedBatch = async () => {
 
 watch(manualRefreshKey || (() => 0), async () => {
   if (section.value === 'history') {
-    await Promise.all([
-      loadBatches(batchPage.value, { silent: true }),
-      selectedBatch.value ? selectBatch(selectedBatch.value.id) : Promise.resolve(),
-    ]);
+    if (selectedBatch.value) await refreshSelectedBatch();
+    else await loadBatches(batchPage.value, { silent: true });
     return;
   }
   await Promise.all([loadFirmwares(), loadUsers()]);
@@ -573,9 +607,10 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 .ota-table-wrap { border: 0; border-radius: 0; box-shadow: none; }
 .ota-table { min-width: 940px; }
 .ota-table td { height: 62px; }
-.batch-detail-panel { overflow: hidden; }
-.batch-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 18px 22px 0; }
-.batch-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 22px; }
+.batch-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); overflow-wrap: anywhere; }
+.batch-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.batch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; margin-bottom: 12px; }
+.batch-actions:empty { display: none; }
 .ota-task-table { min-width: 1150px; }
 .ota-task-table td { height: 70px; }
 .ota-task-table td strong { color: var(--ink); }
@@ -589,7 +624,8 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 }
 @media (max-width: 900px) {
   .scope-cards { grid-template-columns: 1fr; }
-  .firmware-meta, .preview-stats, .batch-summary { grid-template-columns: 1fr; }
+  .firmware-meta, .preview-stats { grid-template-columns: 1fr; }
+  .batch-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ota-toolbar { align-items: flex-start; flex-direction: column; }
 }
 </style>

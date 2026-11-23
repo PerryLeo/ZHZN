@@ -174,7 +174,7 @@ paths:
       tags: [设备分组]
       x-apifox-folder: 设备分组
       operationId: listDeviceGroups
-      summary: 获取设备分组列表
+      summary: 获取当前用户的设备分组
       security: [{ bearerAuth: [] }]
       responses:
         '200': { $ref: '#/components/responses/JsonResponse' }
@@ -183,6 +183,7 @@ paths:
       x-apifox-folder: 设备分组
       operationId: createDeviceGroup
       summary: 创建设备分组
+      description: 仅能将当前用户已绑定的设备加入分组。
       security: [{ bearerAuth: [] }]
       requestBody:
         $ref: '#/components/requestBodies/CreateGroupRequest'
@@ -425,12 +426,24 @@ paths:
         - { $ref: '#/components/parameters/Id' }
       responses:
         '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/admin/users/{id}/device-groups:
+    get:
+      tags: [管理端]
+      x-apifox-folder: 管理端/用户管理
+      operationId: listAdminUserDeviceGroups
+      summary: 获取指定用户的设备分组
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
   /api/admin/devices:
     get:
       tags: [管理端]
       x-apifox-folder: 管理端/设备管理
       operationId: listAdminDevices
       summary: 获取管理端设备列表
+      description: 按分组筛选时必须同时传入所属用户 ID，且分组归属于该用户。
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/Page' }

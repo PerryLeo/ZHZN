@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { AdminController } from '../controllers/admin.controller.js';
+import { DeviceGroupController } from '../controllers/deviceGroup.controller.js';
 import { auth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/admin.js';
 
@@ -9,6 +10,7 @@ router.use(auth, requireAdmin);
 router.get('/dashboard', AdminController.dashboard);
 router.get('/users', AdminController.users);
 router.get('/users/:id/devices', AdminController.userDevices);
+router.get('/users/:id/device-groups', DeviceGroupController.listForUser);
 router.get('/devices', AdminController.devices);
 router.post('/devices', AdminController.createDevice);
 router.put('/devices/:id', AdminController.updateDevice);
