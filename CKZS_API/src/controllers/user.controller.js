@@ -8,7 +8,7 @@ import { success, fail, paginate } from '../utils/response.js';
 
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user.id, username: user.username },
+    { id: user.id, username: user.username, tokenVersion: user.tokenVersion ?? 0 },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn }
   );
@@ -16,7 +16,7 @@ const generateToken = (user) => {
 
 const userInfo = (user) => {
   const obj = user.toJSON ? user.toJSON() : user;
-  const { password, ...info } = obj;
+  const { password, tokenVersion, ...info } = obj;
   return info;
 };
 
@@ -65,7 +65,7 @@ export const UserController = {
   async profile(req, res) {
     try {
       const user = await User.findByPk(req.user.id, {
-        attributes: { exclude: ['password'] },
+        attributes: { exclude: ['password', 'tokenVersion'] },
       });
       if (!user) return fail(res, '用户不存在', 404);
       return success(res, user);
@@ -82,10 +82,12 @@ export const UserController = {
       if (newPassword.length < 6) return fail(res, '新密码长度不能少于6位');
 
       const user = await User.findByPk(req.user.id);
+      if (!user) return fail(res, '用户不存在', 404);
       const isMatch = await bcrypt.compare(oldPassword, user.password);
       if (!isMatch) return fail(res, '旧密码错误');
 
       user.password = await bcrypt.hash(newPassword, 10);
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
       await user.save();
       return success(res, null, '密码修改成功');
     } catch (err) {
@@ -262,6 +264,7 @@ export const UserController = {
 
       const defaultPwd = '123456';
       user.password = await bcrypt.hash(defaultPwd, 10);
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
       await user.save();
 
       return success(res, null, `已重置 ${username} 的密码为 ${defaultPwd}`);

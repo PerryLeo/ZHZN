@@ -29,6 +29,12 @@ export const initUserModel = (sequelize) => {
       defaultValue: 'user',
       comment: '角色: user | admin',
     },
+    tokenVersion: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Token 版本号，修改/重置密码后递增以使旧 Token 立即失效',
+    },
   }, {
     tableName: 'users',
     timestamps: true,

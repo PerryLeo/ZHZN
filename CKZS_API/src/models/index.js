@@ -42,6 +42,15 @@ export const syncDB = async () => {
   // force: true 会删表重建 — 生产环境务必设为 false
   await sequelize.sync({ force: false, alter: false });
   const queryInterface = sequelize.getQueryInterface();
+  const userColumns = await queryInterface.describeTable('users');
+  if (!userColumns.tokenVersion) {
+    await queryInterface.addColumn('users', 'tokenVersion', {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Token 版本号，修改/重置密码后递增以使旧 Token 立即失效',
+    });
+  }
   const deviceColumns = await queryInterface.describeTable('devices');
   if (!deviceColumns.remarkName) {
     await queryInterface.addColumn('devices', 'remarkName', {
