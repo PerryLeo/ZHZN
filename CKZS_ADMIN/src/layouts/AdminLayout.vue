@@ -20,7 +20,6 @@
           <h1>{{ route.meta.title }}</h1>
         </div>
         <div class="top-actions">
-          <button class="icon-btn" type="button" title="刷新当前页面" aria-label="刷新当前页面" @click="refreshKey += 1"><AppIcon name="refresh" :size="19" /></button>
           <div class="admin-profile">
             <div class="avatar">{{ avatar }}</div>
             <div><strong>{{ user?.username }}</strong><span>系统管理员</span></div>
@@ -28,14 +27,14 @@
         </div>
       </header>
       <div class="page-content">
-        <RouterView :key="route.name === 'ota' ? route.fullPath : `${route.fullPath}-${refreshKey}`" />
+        <RouterView :key="route.fullPath" />
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, provide, ref } from 'vue';
+import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { clearSession, getUser } from '../services/auth.js';
 import { showToast } from '../utils/toast.js';
@@ -43,8 +42,6 @@ import AppIcon from '../components/AppIcon.vue';
 
 const route = useRoute();
 const router = useRouter();
-const refreshKey = ref(0);
-provide('manualRefreshKey', refreshKey);
 const user = getUser();
 const avatar = computed(() => user?.username?.slice(0, 1).toUpperCase() || 'A');
 const menu = [
@@ -64,8 +61,6 @@ const logout = async () => {
 
 <style scoped>
 @media (min-width: 1101px) {
-  .detail-workspace:has(.detail-tab-status) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
-  .detail-workspace:has(.detail-tab-status) .topbar { flex: 0 0 86px; }
-  .detail-workspace:has(.detail-tab-status) .page-content { flex: 1; min-height: 0; padding: 20px 24px; }
+  .detail-workspace:has(.detail-tab-status) .page-content { padding: 20px 24px; }
 }
 </style>

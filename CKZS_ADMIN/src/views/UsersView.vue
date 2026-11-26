@@ -1,4 +1,5 @@
 <template>
+  <div class="table-page">
   <div class="toolbar">
     <div class="filter-group">
       <div class="search-box">
@@ -16,6 +17,7 @@
     <div class="toolbar-actions"><span class="account-total">共 <strong>{{ pageData.total }}</strong> 个平台账号</span></div>
   </div>
   <div class="table-wrap">
+    <div class="table-scroll">
     <table class="data-table">
       <thead><tr><th>用户</th><th>角色</th><th>绑定设备</th><th>注册时间</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody>
@@ -41,6 +43,7 @@
         </template>
       </tbody>
     </table>
+    </div>
     <AppPagination
       :page="pageData.page"
       :total="pageData.total"
@@ -50,6 +53,7 @@
       @change="changePage"
       @page-size-change="changePageSize"
     />
+  </div>
   </div>
 
   <AppModal v-model="resetModal.visible" title="重置用户密码" confirm-text="确认操作" danger :loading="submitting" @confirm="resetPassword">

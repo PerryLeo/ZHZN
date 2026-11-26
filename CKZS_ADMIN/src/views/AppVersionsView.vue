@@ -15,7 +15,7 @@
     <section class="panel">
       <div class="panel-header"><div><h2>版本记录</h2><p>同一时间仅一个版本对外发布；撤回后停止提示和新的下载</p></div><div class="release-header-actions"><button class="secondary-btn" type="button" :disabled="!latestPublished" @click="qrVisible = true">扫码下载</button><button class="secondary-btn" type="button" :disabled="loading || uploading || acting" @click="load(page)">刷新</button></div></div>
       <div v-if="loadError" class="release-error">{{ loadError }}</div>
-      <div class="table-wrap"><table class="data-table">
+      <div class="table-wrap"><div class="table-scroll"><table class="data-table">
         <thead><tr><th>版本</th><th>安装包</th><th>更新方式</th><th>状态</th><th>发布时间</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-if="loading"><td colspan="6" class="empty-state">正在加载版本…</td></tr>
@@ -34,7 +34,7 @@
             </div></td>
           </tr>
         </tbody>
-      </table>
+      </table></div>
       <AppPagination
         :page="page"
         :total="total"

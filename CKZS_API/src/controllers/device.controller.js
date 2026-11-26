@@ -5,6 +5,8 @@ import mqttService from '../services/mqtt.service.js';
 
 const BATCH_CONCURRENCY = 50;
 const STATUS_QUERY_LIMIT = 10;
+const ADMIN_STATUS_QUERY_LIMIT = 200;
+const ADMIN_STATUS_QUERY_CONCURRENCY = 100;
 
 export const DeviceController = {
   async sendCommand(req, res) {
@@ -116,48 +118,70 @@ export const DeviceController = {
 
       if (uniqueCodes.length === 0) return fail(res, '缺少必填参数: deviceCodes（非空数组）');
       if (uniqueCodes.length !== deviceCodes.length) return fail(res, 'deviceCodes 中存在空值或重复设备编码');
-      if (uniqueCodes.length > STATUS_QUERY_LIMIT) {
-        return fail(res, `单次最多查询 ${STATUS_QUERY_LIMIT} 台设备`);
-      }
-
       const operator = await User.findByPk(req.user.id, { attributes: ['id', 'role'] });
       const isAdmin = operator?.role === 'admin';
+      const queryLimit = isAdmin ? ADMIN_STATUS_QUERY_LIMIT : STATUS_QUERY_LIMIT;
+      if (uniqueCodes.length > queryLimit) {
+        return fail(res, `单次最多查询 ${queryLimit} 台设备`);
+      }
+
       const allowedDevices = await Device.findAll({
         where: {
           deviceCode: { [Op.in]: uniqueCodes },
           ...(isAdmin ? {} : { status: 1, userId: req.user.id }),
         },
-        attributes: ['deviceCode'],
+        attributes: ['deviceCode', 'online'],
       });
       if (allowedDevices.length !== uniqueCodes.length) {
         return fail(res, '部分设备不存在、未绑定或无操作权限', 403);
       }
-      if (uniqueCodes.some(code => mqttService.isOtaBusy(code))) {
+
+      const otaBusyCodes = new Set(uniqueCodes.filter(code => mqttService.isOtaBusy(code)));
+      if (!isAdmin && otaBusyCodes.size > 0) {
         return fail(res, '部分设备正在升级，暂时无法查询状态', 409);
       }
 
-      const settled = await Promise.allSettled(
-        uniqueCodes.map(deviceCode =>
-          mqttService.publishRawCommandAndWait(deviceCode, '$c\n', timeout)
-        )
-      );
-      const results = settled.map((result, index) => {
-        const deviceCode = uniqueCodes[index];
-        if (result.status === 'fulfilled') {
-          return {
-            ...result.value,
-            deviceCode,
-            success: true,
-          };
-        }
-        return {
-          deviceCode,
-          success: false,
-          error: result.reason?.message || '设备状态查询失败',
-        };
-      });
-      const onlineCodes = results.filter(item => item.success).map(item => item.deviceCode);
-      const offlineCodes = results.filter(item => !item.success).map(item => item.deviceCode);
+      const queryableCodes = uniqueCodes.filter(code => !otaBusyCodes.has(code));
+      const resultMap = new Map();
+      const deviceOnlineMap = new Map(allowedDevices.map(d => [d.deviceCode, Number(d.online) === 1]));
+      for (const code of otaBusyCodes) {
+        resultMap.set(code, {
+          deviceCode: code,
+          success: deviceOnlineMap.get(code) ?? true,
+          otaBusy: true,
+          error: '设备正在升级',
+        });
+      }
+
+      const concurrency = isAdmin ? ADMIN_STATUS_QUERY_CONCURRENCY : STATUS_QUERY_LIMIT;
+      for (let i = 0; i < queryableCodes.length; i += concurrency) {
+        const chunk = queryableCodes.slice(i, i + concurrency);
+        const settled = await Promise.allSettled(
+          chunk.map(deviceCode =>
+            mqttService.publishRawCommandAndWait(deviceCode, '$c\n', timeout)
+          )
+        );
+        settled.forEach((result, index) => {
+          const deviceCode = chunk[index];
+          if (result.status === 'fulfilled') {
+            resultMap.set(deviceCode, {
+              ...result.value,
+              deviceCode,
+              success: true,
+            });
+          } else {
+            resultMap.set(deviceCode, {
+              deviceCode,
+              success: false,
+              error: result.reason?.message || '设备状态查询失败',
+            });
+          }
+        });
+      }
+
+      const results = uniqueCodes.map(code => resultMap.get(code));
+      const onlineCodes = results.filter(item => item.success && !item.otaBusy).map(item => item.deviceCode);
+      const offlineCodes = results.filter(item => !item.success && !item.otaBusy).map(item => item.deviceCode);
 
       const onlineUpdates = [];
       if (onlineCodes.length > 0) {

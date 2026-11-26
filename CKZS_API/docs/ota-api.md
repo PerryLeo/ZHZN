@@ -19,10 +19,11 @@ OTA_MODE_SETTLE_MS=500
 OTA_BEGIN_MAX_ATTEMPTS=2
 OTA_END_TIMEOUT_MS=15000
 OTA_MAX_RETRY=3
+OTA_MAX_CONCURRENCY=5
 ```
 
 `OTA_CHUNK_SIZE` 的有效范围为 `64-2048`；超过 `2048` 会自动限制为
-`2048`，以匹配 MCU 的单帧 payload 上限。
+`2048`，以匹配 MCU 的单帧 payload 上限。`OTA_MAX_CONCURRENCY` 控制服务端同时升级的设备并发上限，有效范围为 `1-20`，默认 `5`。
 
 收到 `$F` 的 `Ok` 后，服务端默认等待 `500ms` 再发送 BEGIN。BEGIN 超时或设备返回
 `OTA:RETRY:0` 时，服务端最多发送 2 次相同的 BEGIN 帧；日志会记录 BEGIN 十六进制内容
@@ -102,10 +103,10 @@ App 下载后应对照列表中的 `firmwareSize` 和 `firmwareSha256` 校验文
 | POST | `/api/ota/firmwares` | 上传一个新版本（原始二进制请求体，最大 10 MB；旧版本保留） |
 | DELETE | `/api/ota/firmwares/{firmwareFile}` | 删除指定固件文件，保留历史任务记录 |
 | POST | `/api/ota/preview` | 预览全部设备、指定用户设备或单个设备范围 |
-| POST | `/api/ota/batches` | 创建并开始一个串行升级批次 |
+| POST | `/api/ota/batches` | 创建并开始一个并发升级批次（受 `OTA_MAX_CONCURRENCY` 并发上限控制） |
 | GET | `/api/ota/batches` | 分页查看批次，可按状态筛选 |
 | GET | `/api/ota/batches/{batchId}` | 查看批次和逐设备进度/结果 |
-| POST | `/api/ota/batches/{batchId}/pause` | 当前设备任务结束后暂停该批次后续设备 |
+| POST | `/api/ota/batches/{batchId}/pause` | 正在升级的设备任务结束后暂停该批次后续设备 |
 | POST | `/api/ota/batches/{batchId}/resume` | 恢复批次中等待处理的设备 |
 | POST | `/api/ota/batches/{batchId}/retry-failed` | 将仍在线的失败设备重新排队 |
 

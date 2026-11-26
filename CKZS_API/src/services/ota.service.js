@@ -18,11 +18,14 @@ const OTA_MODE_SETTLE_MS = Math.min(Math.max(Number(process.env.OTA_MODE_SETTLE_
 const BEGIN_MAX_ATTEMPTS = Math.min(Math.max(Number(process.env.OTA_BEGIN_MAX_ATTEMPTS) || 2, 1), 3);
 const END_TIMEOUT_MS = Math.min(Math.max(Number(process.env.OTA_END_TIMEOUT_MS) || 15000, 1000), 120000);
 const MAX_RETRY = Math.min(Math.max(Number(process.env.OTA_MAX_RETRY) || 3, 1), 10);
+const MAX_CONCURRENCY = Math.min(Math.max(Number(process.env.OTA_MAX_CONCURRENCY) || 5, 1), 20);
+const PROGRESS_PERSIST_INTERVAL_MS = 500;
 const OTA_UPLINK_LOG_MAX_BYTES = 512;
 const queue = [];
 const queuedTaskIds = new Set();
 const activeTasks = new Map();
-let queueRunning = false;
+const batchSummaryLocks = new Map();
+let runningCount = 0;
 let firmwareUploadInProgress = false;
 let firmwareDeletionInProgress = false;
 let taskCreationCount = 0;
@@ -171,7 +174,7 @@ const persistTask = async (task, updates) => {
   return task;
 };
 
-const summarizeBatch = async (batchId) => {
+const summarizeBatchNow = async (batchId) => {
   const batch = await OtaBatch.findByPk(batchId);
   if (!batch) return null;
   const rows = await OtaTask.findAll({ where: { batchId }, attributes: ['status'], raw: true });
@@ -192,6 +195,16 @@ const summarizeBatch = async (batchId) => {
   return batch;
 };
 
+const summarizeBatch = (batchId) => {
+  const previous = batchSummaryLocks.get(batchId) || Promise.resolve();
+  const current = previous.catch(() => {}).then(() => summarizeBatchNow(batchId));
+  batchSummaryLocks.set(batchId, current);
+  current.finally(() => {
+    if (batchSummaryLocks.get(batchId) === current) batchSummaryLocks.delete(batchId);
+  });
+  return current;
+};
+
 const enqueueTask = (task, firmwarePath) => {
   if (queuedTaskIds.has(task.id)) return;
   queuedTaskIds.add(task.id);
@@ -200,18 +213,19 @@ const enqueueTask = (task, firmwarePath) => {
 };
 
 const pumpQueue = () => {
-  if (queueRunning) return;
-  const runnableIndex = queue.findIndex(({ task }) => !task.batchId || !pausedBatchIds.has(task.batchId));
-  if (runnableIndex < 0) return;
-  const [job] = queue.splice(runnableIndex, 1);
-  queuedTaskIds.delete(job.task.id);
-  queueRunning = true;
-  executeTask(job.task, job.firmwarePath)
-    .catch(error => console.error(`[OTA] task=${job.task.id} queue error:`, error.message))
-    .finally(() => {
-      queueRunning = false;
-      pumpQueue();
-    });
+  while (runningCount < MAX_CONCURRENCY) {
+    const runnableIndex = queue.findIndex(({ task }) => !task.batchId || !pausedBatchIds.has(task.batchId));
+    if (runnableIndex < 0) return;
+    const [job] = queue.splice(runnableIndex, 1);
+    queuedTaskIds.delete(job.task.id);
+    runningCount += 1;
+    executeTask(job.task, job.firmwarePath)
+      .catch(error => console.error(`[OTA] task=${job.task.id} queue error:`, error.message))
+      .finally(() => {
+        runningCount -= 1;
+        pumpQueue();
+      });
+  }
 };
 
 const pausedBatchIds = new Set();
@@ -317,6 +331,9 @@ const executeTask = async (task, firmwarePath) => {
       message: '正在读取固件',
       firmwareSha256: task.firmwareSha256 || '',
     });
+    if (task.batchId) {
+      summarizeBatch(task.batchId).catch(error => console.error(`[OTA] batch=${task.batchId} summary failed:`, error.message));
+    }
 
     const firmware = await fs.readFile(firmwarePath);
     const firmwareCrc = crc16Ccitt(firmware);
@@ -368,6 +385,7 @@ const executeTask = async (task, firmwarePath) => {
     if (!beginAcknowledged) throw new Error('设备未确认 BEGIN 帧');
 
     let offset = 0;
+    let lastProgressPersistAt = 0;
     while (offset < firmware.length) {
       let chunk = firmware.subarray(offset, Math.min(offset + CHUNK_SIZE, firmware.length));
       let acknowledged = false;
@@ -399,7 +417,14 @@ const executeTask = async (task, firmwarePath) => {
 
       if (!acknowledged) throw new Error(`固件偏移 ${offset} 多次重传失败`);
       const progress = Number(((offset / firmware.length) * 100).toFixed(1));
-      await persistTask(task, { offset, progress, message: `正在传输固件 ${progress}%` });
+      const now = Date.now();
+      if (offset >= firmware.length || now - lastProgressPersistAt >= PROGRESS_PERSIST_INTERVAL_MS) {
+        lastProgressPersistAt = now;
+        await persistTask(task, { offset, progress, message: `正在传输固件 ${progress}%` });
+      } else {
+        task.offset = offset;
+        task.progress = progress;
+      }
     }
 
     await persistTask(task, { status: 'verifying', message: '设备正在校验固件' });
@@ -424,6 +449,8 @@ const executeTask = async (task, firmwarePath) => {
   } catch (error) {
     await persistTask(task, {
       status: 'failed',
+      offset: task.offset || 0,
+      progress: task.progress || 0,
       message: error.message || 'OTA升级失败',
       finishedAt: new Date(),
     }).catch(persistError => console.error(`[OTA] task=${task.id} status persist failed:`, persistError.message));

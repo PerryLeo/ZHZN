@@ -46,6 +46,7 @@ const props = defineProps({
   modelValue: [String, Number],
   label: { type: String, required: true },
   options: { type: Array, required: true },
+  placeholder: String,
   emptyLabel: String,
   searchPlaceholder: { type: String, default: '搜索选项' },
   disabled: Boolean,
@@ -60,7 +61,7 @@ const searchInput = ref(null);
 const open = ref(false);
 const keyword = ref('');
 const selectedLabel = computed(() => (
-  props.options.find(option => option.value === props.modelValue)?.label || props.emptyLabel || '请选择'
+  props.options.find(option => option.value === props.modelValue)?.label || props.placeholder || props.emptyLabel || '请选择'
 ));
 const matches = computed(() => {
   const search = keyword.value.trim().toLowerCase();

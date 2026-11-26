@@ -1,4 +1,5 @@
 <template>
+  <div class="table-page">
   <div class="toolbar device-toolbar">
     <div class="filter-group">
       <div class="search-box">
@@ -12,9 +13,13 @@
       </div>
       <AppSearchSelect v-model="query.userId" class="owner-filter" label="所属用户" empty-label="全部用户" search-placeholder="搜索用户账号" :options="ownerOptions" @change="changeOwner" />
       <AppSearchSelect v-model="selectedGroupId" label="设备分组" :empty-label="query.userId ? '全部设备分组' : '请先选择用户'" :options="groupOptions" :disabled="!query.userId || groupsLoading" @change="search" />
-      <AppSearchSelect v-model="query.status" label="设备状态" empty-label="全部设备状态" :options="statusOptions" />
+      <AppSearchSelect v-model="query.status" label="在线状态" placeholder="在线状态" empty-label="全部设备" :options="statusOptions" @change="search" />
+      <AppSearchSelect v-model="query.abnormalStatus" label="异常状态" placeholder="异常状态" empty-label="全部设备" :options="abnormalStatusOptions" @change="search" />
       <button class="secondary-btn" type="button" @click="search">查询</button>
-      <span v-if="onlineStatusChecking" class="online-checking-hint"><i></i>正在检测当前页设备在线状态...</span>
+      <button class="icon-btn" type="button" title="刷新当前页" aria-label="刷新当前页" :disabled="loading" @click="refreshCurrentPage">
+        <AppIcon name="refresh" :size="19" />
+      </button>
+      <span v-if="onlineStatusChecking" class="online-checking-hint"><i></i>{{ statusCheckingText }}</span>
     </div>
     <div class="toolbar-actions">
       <button class="primary-btn" type="button" @click="openDeviceForm()">+ 登记设备</button>
@@ -22,7 +27,8 @@
   </div>
 
   <div class="table-wrap">
-    <table class="data-table">
+    <div class="table-scroll">
+    <table class="data-table devices-table">
       <thead><tr>
         <th :aria-sort="getAriaSort('remarkName')">
           <button
@@ -42,7 +48,7 @@
         <th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>运行状态</th><th>完成度</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th>
       </tr></thead>
       <tbody>
-        <tr v-if="loading"><td colspan="13" class="empty-state">数据加载中...</td></tr>
+        <tr v-if="loading"><td colspan="13" class="empty-state">{{ loadingText }}</td></tr>
         <tr v-else-if="!pageData.list.length"><td colspan="13" class="empty-state">暂无符合条件的设备</td></tr>
         <template v-else>
           <tr v-for="item in pageData.list" :key="item.id" :class="{ 'clickable-row': !item.onlineChecking, 'device-row-disabled': item.onlineChecking }" @click="openDetail(item)">
@@ -81,6 +87,7 @@
         </template>
       </tbody>
     </table>
+    </div>
     <AppPagination
       :page="pageData.page"
       :total="pageData.total"
@@ -90,6 +97,7 @@
       @change="changePage"
       @page-size-change="changePageSize"
     />
+  </div>
   </div>
 
   <AppModal v-model="deviceModal.visible" :title="deviceModal.editing ? '编辑设备' : '登记设备'" :loading="submitting" @confirm="saveDevice">
@@ -117,6 +125,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import AppIcon from '../components/AppIcon.vue';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppSearchSelect from '../components/AppSearchSelect.vue';
@@ -131,11 +140,31 @@ const statusOptions = [
   { value: 'online', label: '在线' },
   { value: 'offline', label: '离线' },
 ];
+const abnormalStatusOptions = [
+  { value: 'normal', label: '正常' },
+  { value: 'abnormal', label: '异常' },
+];
 const loading = ref(false);
 const submitting = ref(false);
 const onlineStatusChecking = ref(false);
 const statusQueryLimit = 10;
-const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', userId: '', sortBy: '', sortOrder: '' });
+const fullStatusQueryLimit = 100;
+const statusProbeConcurrency = 2;
+const statusProbeProgress = reactive({ completed: 0, total: 0 });
+const probedFilteredDevices = ref(null);
+const statusCheckingText = computed(() => {
+  if (statusProbeProgress.total <= 0) return '正在检测当前页设备在线状态...';
+  if (statusProbeProgress.total <= fullStatusQueryLimit) {
+    return `正在并发检测设备状态（共 ${statusProbeProgress.total} 台）...`;
+  }
+  return `正在实时检测设备状态（${statusProbeProgress.completed}/${statusProbeProgress.total}）...`;
+});
+const loadingText = computed(() => (
+  onlineStatusChecking.value && statusProbeProgress.total > 0
+    ? statusCheckingText.value
+    : '数据加载中...'
+));
+const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', abnormalStatus: '', userId: '', sortBy: '', sortOrder: '' });
 const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPages: 0 });
 const deviceModal = reactive({ visible: false, editing: null });
 const bindModal = reactive({ visible: false, device: null });
@@ -172,6 +201,9 @@ const refreshDeviceStatusBatch = async (devices) => {
       device.online = status?.success ? 1 : 0;
       if (status?.success) {
         Object.assign(device, parseDeviceStatusReport(status));
+      } else {
+        device.abnormalStatus = '--';
+        device.hasAlarm = false;
       }
     });
   } finally {
@@ -204,30 +236,125 @@ const refreshCurrentPageOnlineStatus = async (devices, requestId) => {
   }
 };
 
+const applyProbedPage = () => {
+  const list = probedFilteredDevices.value || [];
+  const total = list.length;
+  const totalPages = Math.ceil(total / query.pageSize);
+  const lastPage = Math.max(totalPages, 1);
+  if (query.page > lastPage) query.page = lastPage;
+  const start = (query.page - 1) * query.pageSize;
+  Object.assign(pageData, {
+    list: list.slice(start, start + query.pageSize),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+    totalPages,
+  });
+};
+
+const fetchAllScopedDevices = async (baseParams, requestId) => {
+  const first = await api.get('/api/admin/devices', { ...baseParams, page: 1, pageSize: 100 });
+  if (requestId !== listRequestId) return [];
+  const list = [...first.list];
+  for (let page = 2; page <= first.totalPages && requestId === listRequestId; page += 1) {
+    const next = await api.get('/api/admin/devices', { ...baseParams, page, pageSize: 100 });
+    if (requestId !== listRequestId) return [];
+    list.push(...next.list);
+  }
+  return list;
+};
+
+const probeDevicesInBatches = async (devices, requestId) => {
+  statusProbeProgress.completed = 0;
+  statusProbeProgress.total = devices.length;
+  if (!devices.length) return;
+  devices.forEach(device => {
+    device.signalStrength = null;
+    device.reportedDeviceName = '';
+    device.onlineChecking = true;
+  });
+  onlineStatusChecking.value = true;
+  const chunks = [];
+  for (let index = 0; index < devices.length; index += fullStatusQueryLimit) {
+    chunks.push(devices.slice(index, index + fullStatusQueryLimit));
+  }
+  let nextChunkIndex = 0;
+  let firstError;
+  const runWorker = async () => {
+    while (requestId === listRequestId && nextChunkIndex < chunks.length) {
+      const chunk = chunks[nextChunkIndex++];
+      try {
+        await refreshDeviceStatusBatch(chunk);
+      } catch (error) {
+        firstError ??= error;
+      } finally {
+        if (requestId === listRequestId) {
+          statusProbeProgress.completed = Math.min(statusProbeProgress.completed + chunk.length, devices.length);
+        }
+      }
+    }
+  };
+  try {
+    await Promise.all(
+      Array.from({ length: Math.min(statusProbeConcurrency, chunks.length) }, () => runWorker())
+    );
+    if (firstError && requestId === listRequestId) {
+      showToast(firstError.message || '设备在线状态检测失败', 'error');
+    }
+  } finally {
+    if (requestId === listRequestId) {
+      onlineStatusChecking.value = false;
+      statusProbeProgress.completed = 0;
+      statusProbeProgress.total = 0;
+    }
+  }
+};
+
 const load = async () => {
   const requestId = ++listRequestId;
   loading.value = true;
   onlineStatusChecking.value = false;
+  statusProbeProgress.completed = 0;
+  statusProbeProgress.total = 0;
+  probedFilteredDevices.value = null;
   pageData.list.forEach(device => { device.onlineChecking = false; });
   try {
-    const params = {
-      ...query,
+    const baseParams = {
+      keyword: query.keyword,
+      ...(query.userId ? { userId: query.userId } : {}),
       ...(selectedGroupId.value ? { groupId: selectedGroupId.value } : {}),
     };
-    delete params.status;
-    if (!query.sortBy) {
-      delete params.sortBy;
-      delete params.sortOrder;
+    if (query.sortBy) {
+      baseParams.sortBy = query.sortBy;
+      baseParams.sortOrder = query.sortOrder;
     }
-    if (query.status === 'online') {
-      params.online = 1;
-    } else if (query.status === 'offline') {
-      params.online = 0;
+
+    const needsLiveFilter = Boolean(query.status || query.abnormalStatus);
+    if (needsLiveFilter) {
+      const allDevices = await fetchAllScopedDevices(baseParams, requestId);
+      if (requestId !== listRequestId) return;
+      await probeDevicesInBatches(allDevices, requestId);
+      if (requestId !== listRequestId) return;
+      probedFilteredDevices.value = allDevices.filter((device) => {
+        const isOnline = Number(device.online) === 1;
+        if (query.status === 'online' && !isOnline) return false;
+        if (query.status === 'offline' && isOnline) return false;
+        if (query.abnormalStatus === 'normal' && !(isOnline && device.abnormalStatus === '无异常')) return false;
+        if (query.abnormalStatus === 'abnormal' && !(isOnline && Boolean(device.hasAlarm))) return false;
+        return true;
+      });
+      applyProbedPage();
+      return;
     }
-    const result = await api.get('/api/admin/devices', params);
+
+    const result = await api.get('/api/admin/devices', {
+      ...baseParams,
+      page: query.page,
+      pageSize: query.pageSize,
+    });
     if (requestId !== listRequestId) return;
     const lastPage = Math.max(result.totalPages, 1);
-    if (params.page > lastPage) {
+    if (query.page > lastPage) {
       query.page = lastPage;
       return load();
     }
@@ -240,8 +367,24 @@ const load = async () => {
   }
 };
 const search = () => { query.page = 1; load(); };
-const changePage = (page) => { query.page = page; load(); };
-const changePageSize = (size) => { query.pageSize = size; search(); };
+const refreshCurrentPage = () => { load(); };
+const changePage = (page) => {
+  query.page = page;
+  if (probedFilteredDevices.value !== null) {
+    applyProbedPage();
+    return;
+  }
+  load();
+};
+const changePageSize = (size) => {
+  query.pageSize = size;
+  query.page = 1;
+  if (probedFilteredDevices.value !== null) {
+    applyProbedPage();
+    return;
+  }
+  load();
+};
 const toggleSort = (field) => {
   if (query.sortBy !== field) {
     query.sortBy = field;
@@ -356,6 +499,7 @@ const loadDeviceGroups = async () => {
 };
 const changeOwner = () => {
   selectedGroupId.value = '';
+  probedFilteredDevices.value = null;
   deviceGroups.value = [];
   void loadDeviceGroups();
   search();

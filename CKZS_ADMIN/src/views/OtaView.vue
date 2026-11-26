@@ -89,7 +89,7 @@
       </section>
 
       <section v-if="preview" class="panel ota-panel">
-        <div class="panel-header"><div><h2>升级范围预览</h2><p>{{ preview.firmware.firmwareFile }} · {{ preview.firmware.firmwareVersion || '版本未识别' }}</p></div><span class="tag success">校验后逐台串行下发</span></div>
+        <div class="panel-header"><div><h2>升级范围预览</h2><p>{{ preview.firmware.firmwareFile }} · {{ preview.firmware.firmwareVersion || '版本未识别' }}</p></div><span class="tag success">校验后并发队列下发</span></div>
         <div class="ota-panel-body">
           <div class="preview-stats">
             <div><span>目标设备</span><strong>{{ preview.targetCount }}</strong></div>
@@ -119,6 +119,7 @@
       <section class="panel ota-panel history-panel">
         <div class="panel-header"><div><h2>升级批次</h2><p>批次与逐设备结果会保存，可在刷新或重新登录后继续查看</p></div></div>
         <div class="table-wrap ota-table-wrap">
+          <div class="table-scroll">
           <table class="data-table ota-table">
             <thead><tr><th>创建时间</th><th>升级范围</th><th>目标固件</th><th>设备进度</th><th>状态</th><th>操作人</th><th>操作</th></tr></thead>
             <tbody>
@@ -135,6 +136,7 @@
               </tr>
             </tbody>
           </table>
+          </div>
           <AppPagination
             :page="batchPage"
             :total="batchTotal"
@@ -187,8 +189,8 @@
     </AppModal>
 
     <AppModal v-model="confirmVisible" title="确认 OTA 更新" confirm-text="创建升级批次" :loading="creatingBatch" @confirm="createBatch">
-      <p class="confirm-copy">将使用固件 <strong>{{ selectedFirmware?.firmwareVersion || firmwareFile }}</strong>，对预览中的 <strong>{{ preview?.eligibleCount || 0 }} 台在线设备</strong>逐台执行 OTA。离线设备会记录为跳过。</p>
-      <p class="confirm-copy ota-confirm-warning">每台设备完成或失败后才会处理下一台；升级期间设备可能短暂离线。</p>
+      <p class="confirm-copy">将使用固件 <strong>{{ selectedFirmware?.firmwareVersion || firmwareFile }}</strong>，对预览中的 <strong>{{ preview?.eligibleCount || 0 }} 台在线设备</strong>执行 OTA 升级队列。离线设备会记录为跳过。</p>
+      <p class="confirm-copy ota-confirm-warning">系统会按并发上限同时升级多台设备，完成后自动调度下一批；升级期间设备可能短暂离线。</p>
     </AppModal>
     <AppModal v-model="uploadConfirmVisible" title="确认上传新版本" confirm-text="上传并保存" :loading="uploadingFirmware" @confirm="uploadFirmware">
       <p class="confirm-copy">将把本地文件 <strong>{{ uploadCandidate?.name }}</strong> 保存到服务器固件目录，并生成一个新的版本文件；现有固件不会被覆盖或删除。</p>
@@ -203,7 +205,7 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import AppModal from '../components/AppModal.vue';
 import AppPagination from '../components/AppPagination.vue';
 import AppSearchSelect from '../components/AppSearchSelect.vue';
@@ -263,7 +265,6 @@ const uploadingFirmware = ref(false);
 const deleteConfirmVisible = ref(false);
 const firmwareToDelete = ref(null);
 const deletingFirmware = ref(false);
-const manualRefreshKey = inject('manualRefreshKey', null);
 let pollTimer = null;
 let polling = false;
 
@@ -441,7 +442,7 @@ const createBatch = async () => {
     historyStatus.value = '';
     await loadBatches(1);
     await selectBatch(result.id);
-    showToast('OTA批次已创建，设备将逐台升级');
+    showToast('OTA批次已创建，设备已进入并发升级队列');
   } catch (error) { showToast(error.message, 'error'); }
   finally { creatingBatch.value = false; }
 };
@@ -502,7 +503,7 @@ const runBatchAction = async (action) => {
     const batch = await api.post(`/api/ota/batches/${batchId}/${action}`, {});
     if (requestId === batchDetailRequestId) selectedBatch.value = batch;
     await loadBatches(batchPage.value);
-    showToast({ pause: '当前设备完成后将暂停队列', resume: 'OTA队列已恢复', 'retry-failed': '失败设备已重新排队' }[action]);
+    showToast({ pause: '正在升级的设备完成后将暂停队列', resume: 'OTA队列已恢复', 'retry-failed': '失败设备已重新排队' }[action]);
   } catch (error) { showToast(error.message, 'error'); }
   finally { batchActionBusy.value = false; }
 };
@@ -520,15 +521,6 @@ const refreshSelectedBatch = async () => {
   } catch { /* keep the last visible state while polling */ }
   finally { polling = false; }
 };
-
-watch(manualRefreshKey || (() => 0), async () => {
-  if (section.value === 'history') {
-    if (selectedBatch.value) await refreshSelectedBatch();
-    else await loadBatches(batchPage.value, { silent: true });
-    return;
-  }
-  await Promise.all([loadFirmwares(), loadUsers()]);
-});
 
 const formatBytes = value => {
   const bytes = Number(value) || 0;
