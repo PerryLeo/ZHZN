@@ -23,7 +23,24 @@
 
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>设备信息</th><th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>运行状态</th><th>完成度</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th></tr></thead>
+      <thead><tr>
+        <th :aria-sort="getAriaSort('remarkName')">
+          <button
+            class="table-sort-btn"
+            :class="{ active: query.sortBy === 'remarkName' }"
+            type="button"
+            :title="getSortTitle('remarkName')"
+            @click="toggleSort('remarkName')"
+          >
+            <span>设备信息</span>
+            <span class="sort-caret" aria-hidden="true">
+              <i class="up" :class="{ active: query.sortBy === 'remarkName' && query.sortOrder === 'asc' }"></i>
+              <i class="down" :class="{ active: query.sortBy === 'remarkName' && query.sortOrder === 'desc' }"></i>
+            </span>
+          </button>
+        </th>
+        <th>设备初始名称</th><th>所属用户</th><th>在线状态</th><th>信号</th><th>运行状态</th><th>完成度</th><th>快捷控制</th><th>实时数据</th><th>异常状态</th><th>绑定状态</th><th>更新时间</th><th>操作</th>
+      </tr></thead>
       <tbody>
         <tr v-if="loading"><td colspan="13" class="empty-state">数据加载中...</td></tr>
         <tr v-else-if="!pageData.list.length"><td colspan="13" class="empty-state">暂无符合条件的设备</td></tr>
@@ -118,7 +135,7 @@ const loading = ref(false);
 const submitting = ref(false);
 const onlineStatusChecking = ref(false);
 const statusQueryLimit = 10;
-const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', userId: '' });
+const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', userId: '', sortBy: '', sortOrder: '' });
 const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPages: 0 });
 const deviceModal = reactive({ visible: false, editing: null });
 const bindModal = reactive({ visible: false, device: null });
@@ -198,6 +215,10 @@ const load = async () => {
       ...(selectedGroupId.value ? { groupId: selectedGroupId.value } : {}),
     };
     delete params.status;
+    if (!query.sortBy) {
+      delete params.sortBy;
+      delete params.sortOrder;
+    }
     if (query.status === 'online') {
       params.online = 1;
     } else if (query.status === 'offline') {
@@ -221,6 +242,26 @@ const load = async () => {
 const search = () => { query.page = 1; load(); };
 const changePage = (page) => { query.page = page; load(); };
 const changePageSize = (size) => { query.pageSize = size; search(); };
+const toggleSort = (field) => {
+  if (query.sortBy !== field) {
+    query.sortBy = field;
+    query.sortOrder = 'asc';
+  } else if (query.sortOrder === 'asc') {
+    query.sortOrder = 'desc';
+  } else {
+    query.sortBy = '';
+    query.sortOrder = '';
+  }
+  search();
+};
+const getAriaSort = (field) => {
+  if (query.sortBy !== field) return 'none';
+  return query.sortOrder === 'desc' ? 'descending' : 'ascending';
+};
+const getSortTitle = (field) => {
+  if (query.sortBy !== field) return '点击按名称升序排列';
+  return query.sortOrder === 'asc' ? '当前升序，点击切换为降序' : '当前降序，点击恢复默认排序';
+};
 const openDetail = (device) => {
   if (device?.onlineChecking) {
     showToast('正在检测设备状态，请稍后进入', 'info');
@@ -382,4 +423,36 @@ onMounted(() => Promise.all([
 <style scoped>
 .device-toolbar, .device-toolbar .filter-group { flex-wrap: wrap; }
 .owner-filter { max-width: 200px; }
+.table-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.table-sort-btn:hover { color: var(--ink); background: rgba(49, 87, 229, .06); }
+.table-sort-btn.active { color: var(--primary); }
+.sort-caret {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sort-caret i {
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+.sort-caret i.up { border-bottom: 5px solid #c0c7d6; }
+.sort-caret i.down { border-top: 5px solid #c0c7d6; }
+.sort-caret i.up.active { border-bottom-color: var(--primary); }
+.sort-caret i.down.active { border-top-color: var(--primary); }
 </style>

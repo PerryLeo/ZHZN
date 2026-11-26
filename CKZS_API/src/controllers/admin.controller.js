@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import { Device, User, DeviceGroup, DeviceGroupMember } from '../models/index.js';
+import { compareByRemarkName } from '../utils/naturalSort.js';
 import { fail, paginate, success } from '../utils/response.js';
 
 const getPagination = (query) => {
@@ -147,6 +148,31 @@ export const AdminController = {
       }
       if (req.query.deviceType) where.deviceType = req.query.deviceType;
       if (req.query.userId) where.userId = userId;
+
+      const sortBy = String(req.query.sortBy || '').trim();
+      const sortOrder = String(req.query.sortOrder || '').trim().toLowerCase() === 'desc' ? 'desc' : 'asc';
+
+      if (sortBy === 'remarkName') {
+        const allRefs = await Device.findAll({
+          where,
+          attributes: ['id', 'remarkName'],
+          raw: true,
+        });
+        allRefs.sort((a, b) => compareByRemarkName(a, b, sortOrder));
+        const total = allRefs.length;
+        const pageIds = allRefs.slice(offset, offset + pageSize).map(item => item.id);
+        if (!pageIds.length) {
+          return paginate(res, { list: [], total, page, pageSize });
+        }
+        const rows = await Device.findAll({
+          where: { id: { [Op.in]: pageIds } },
+          include: [{ model: User, as: 'owner', attributes: ['id', 'username'] }],
+        });
+        const rowMap = new Map(rows.map(row => [row.id, row]));
+        const list = pageIds.map(id => rowMap.get(id)).filter(Boolean);
+        return paginate(res, { list, total, page, pageSize });
+      }
+
       const { rows, count } = await Device.findAndCountAll({
         where,
         include: [{ model: User, as: 'owner', attributes: ['id', 'username'] }],
