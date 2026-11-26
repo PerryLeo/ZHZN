@@ -12,9 +12,9 @@
         <input v-model.trim="query.keyword" placeholder="搜索设备名称或编码" @keyup.enter="search">
       </div>
       <AppSearchSelect v-model="query.userId" class="owner-filter" label="所属用户" empty-label="全部用户" search-placeholder="搜索用户账号" :options="ownerOptions" @change="changeOwner" />
-      <AppSearchSelect v-model="selectedGroupId" label="设备分组" :empty-label="query.userId ? '全部设备分组' : '请先选择用户'" :options="groupOptions" :disabled="!query.userId || groupsLoading" @change="search" />
-      <AppSearchSelect v-model="query.status" label="在线状态" placeholder="在线状态" empty-label="全部设备" :options="statusOptions" @change="search" />
-      <AppSearchSelect v-model="query.abnormalStatus" label="异常状态" placeholder="异常状态" empty-label="全部设备" :options="abnormalStatusOptions" @change="search" />
+      <AppSearchSelect v-model="selectedGroupId" label="设备分组" placeholder="设备分组" empty-label="全部设备分组" :options="groupOptions" :disabled="!query.userId || groupsLoading" @change="search" />
+      <AppSearchSelect v-model="query.status" label="在线状态" placeholder="在线状态" empty-label="全部设备" :options="statusOptions" :disabled="!query.userId" @change="search" />
+      <AppSearchSelect v-model="query.abnormalStatus" label="异常状态" placeholder="异常状态" empty-label="全部设备" :options="abnormalStatusOptions" :disabled="!query.userId" @change="search" />
       <button class="secondary-btn" type="button" @click="search">查询</button>
       <button class="icon-btn" type="button" title="刷新当前页" aria-label="刷新当前页" :disabled="loading" @click="refreshCurrentPage">
         <AppIcon name="refresh" :size="19" />
@@ -318,6 +318,10 @@ const load = async () => {
   statusProbeProgress.total = 0;
   probedFilteredDevices.value = null;
   pageData.list.forEach(device => { device.onlineChecking = false; });
+  if (!query.userId) {
+    query.status = '';
+    query.abnormalStatus = '';
+  }
   try {
     const baseParams = {
       keyword: query.keyword,
@@ -329,7 +333,7 @@ const load = async () => {
       baseParams.sortOrder = query.sortOrder;
     }
 
-    const needsLiveFilter = Boolean(query.status || query.abnormalStatus);
+    const needsLiveFilter = Boolean(query.userId && (query.status || query.abnormalStatus));
     if (needsLiveFilter) {
       const allDevices = await fetchAllScopedDevices(baseParams, requestId);
       if (requestId !== listRequestId) return;
@@ -499,6 +503,8 @@ const loadDeviceGroups = async () => {
 };
 const changeOwner = () => {
   selectedGroupId.value = '';
+  query.status = '';
+  query.abnormalStatus = '';
   probedFilteredDevices.value = null;
   deviceGroups.value = [];
   void loadDeviceGroups();
