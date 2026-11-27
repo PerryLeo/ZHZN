@@ -15,6 +15,7 @@
       <AppSearchSelect v-model="selectedGroupId" label="设备分组" placeholder="设备分组" empty-label="全部设备分组" :options="groupOptions" :disabled="!query.userId || groupsLoading" @change="search" />
       <AppSearchSelect v-model="query.status" label="在线状态" placeholder="在线状态" empty-label="全部设备" :options="statusOptions" :disabled="!query.userId" @change="search" />
       <AppSearchSelect v-model="query.abnormalStatus" label="异常状态" placeholder="异常状态" empty-label="全部设备" :options="abnormalStatusOptions" :disabled="!query.userId" @change="search" />
+      <AppSearchSelect v-model="query.completionSort" label="完成度" placeholder="完成度" empty-label="默认排序" :options="completionSortOptions" :disabled="!query.userId" @change="search" />
       <button class="secondary-btn" type="button" @click="search">查询</button>
       <button class="icon-btn" type="button" title="刷新当前页" aria-label="刷新当前页" :disabled="loading" @click="refreshCurrentPage">
         <AppIcon name="refresh" :size="19" />
@@ -144,6 +145,10 @@ const abnormalStatusOptions = [
   { value: 'normal', label: '正常' },
   { value: 'abnormal', label: '异常' },
 ];
+const completionSortOptions = [
+  { value: 'asc', label: '由低到高' },
+  { value: 'desc', label: '由高到低' },
+];
 const loading = ref(false);
 const submitting = ref(false);
 const onlineStatusChecking = ref(false);
@@ -164,7 +169,7 @@ const loadingText = computed(() => (
     ? statusCheckingText.value
     : '数据加载中...'
 ));
-const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', abnormalStatus: '', userId: '', sortBy: '', sortOrder: '' });
+const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', abnormalStatus: '', completionSort: '', userId: '', sortBy: '', sortOrder: '' });
 const pageData = reactive({ list: [], total: 0, page: 1, pageSize: 10, totalPages: 0 });
 const deviceModal = reactive({ visible: false, editing: null });
 const bindModal = reactive({ visible: false, device: null });
@@ -204,6 +209,7 @@ const refreshDeviceStatusBatch = async (devices) => {
       } else {
         device.abnormalStatus = '--';
         device.hasAlarm = false;
+        device.tripProgress = null;
       }
     });
   } finally {
@@ -310,6 +316,25 @@ const probeDevicesInBatches = async (devices, requestId) => {
   }
 };
 
+const getCompletionRate = (device) => {
+  if (Number(device?.online) !== 1 || !device?.tripProgress) return null;
+  const text = String(device.tripProgress).trim();
+  const fractionMatch = text.match(/^(-?\d+(?:\.\d+)?)\s*\/\s*(-?\d+(?:\.\d+)?)$/);
+  if (fractionMatch) {
+    const current = Number(fractionMatch[1]);
+    const total = Number(fractionMatch[2]);
+    if (!Number.isFinite(current) || !Number.isFinite(total)) return null;
+    if (total <= 0) return 0;
+    return current / total;
+  }
+  const percentMatch = text.match(/^(-?\d+(?:\.\d+)?)%$/);
+  if (percentMatch) {
+    const percent = Number(percentMatch[1]);
+    return Number.isFinite(percent) ? percent / 100 : null;
+  }
+  return null;
+};
+
 const load = async () => {
   const requestId = ++listRequestId;
   loading.value = true;
@@ -321,6 +346,7 @@ const load = async () => {
   if (!query.userId) {
     query.status = '';
     query.abnormalStatus = '';
+    query.completionSort = '';
   }
   try {
     const baseParams = {
@@ -333,13 +359,13 @@ const load = async () => {
       baseParams.sortOrder = query.sortOrder;
     }
 
-    const needsLiveFilter = Boolean(query.userId && (query.status || query.abnormalStatus));
+    const needsLiveFilter = Boolean(query.userId && (query.status || query.abnormalStatus || query.completionSort));
     if (needsLiveFilter) {
       const allDevices = await fetchAllScopedDevices(baseParams, requestId);
       if (requestId !== listRequestId) return;
       await probeDevicesInBatches(allDevices, requestId);
       if (requestId !== listRequestId) return;
-      probedFilteredDevices.value = allDevices.filter((device) => {
+      const filteredDevices = allDevices.filter((device) => {
         const isOnline = Number(device.online) === 1;
         if (query.status === 'online' && !isOnline) return false;
         if (query.status === 'offline' && isOnline) return false;
@@ -347,6 +373,17 @@ const load = async () => {
         if (query.abnormalStatus === 'abnormal' && !(isOnline && Boolean(device.hasAlarm))) return false;
         return true;
       });
+      if (query.completionSort) {
+        filteredDevices.sort((a, b) => {
+          const rateA = getCompletionRate(a);
+          const rateB = getCompletionRate(b);
+          if (rateA === null && rateB === null) return 0;
+          if (rateA === null) return 1;
+          if (rateB === null) return -1;
+          return query.completionSort === 'asc' ? rateA - rateB : rateB - rateA;
+        });
+      }
+      probedFilteredDevices.value = filteredDevices;
       applyProbedPage();
       return;
     }
@@ -505,6 +542,7 @@ const changeOwner = () => {
   selectedGroupId.value = '';
   query.status = '';
   query.abnormalStatus = '';
+  query.completionSort = '';
   probedFilteredDevices.value = null;
   deviceGroups.value = [];
   void loadDeviceGroups();
